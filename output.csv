@@ -1,0 +1,293 @@
+name,response
+Cisco IOS XE Implant Access,
+Zscaler Scam Destinations Threat Blocked,"SEARCH Zscaler web proxy logs
+| FILTER records where action equals ""blocked""
+| FILTER records where threatname contains the substring ""scam"" (case-insensitive)
+| GROUP BY action, deviceowner, user, urlcategory, url, src, dest AGGREGATE count() as event_count, min(_time) as firstTime, max(_time) as lastTime
+| DERIVE firstTime_readable = convert_epoch_to_readable(firstTime)
+| DERIVE lastTime_readable = convert_epoch_to_readable(lastTime)
+| APPLY environment-specific allowlist/suppression to exclude known-benign users, sources, destinations, or categories
+| OUTPUT action, deviceowner, user, urlcategory, url, src, dest, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Windows IIS Server PSWA Console Access,"SEARCH Windows IIS web server access logs for HTTP requests |
+PARSE fields: timestamp, source_ip, destination_host, http_method, http_status, uri_path, uri_query |
+FILTER events where uri_path equals ""/pswa"" OR uri_path starts with ""/pswa/"" (case-insensitive) |
+GROUP events by source_ip, http_status, uri_path, destination_host, http_method, uri_query |
+COMPUTE request_count = number of events per group, first_seen_time = minimum timestamp per group, last_seen_time = maximum timestamp per group |
+DERIVE first_seen_readable = human-readable format of first_seen_time, last_seen_readable = human-readable format of last_seen_time |
+APPLY environment-specific filters to exclude known benign sources or expected administrative activity (e.g., allowlisted source IPs or monitoring probes) |
+OUTPUT destination_host, source_ip, http_method, http_status, uri_path, uri_query, request_count, first_seen_time, last_seen_time, first_seen_readable, last_seen_readable"
+Confluence CVE-2023-22515 Trigger Vulnerability,"SEARCH Suricata HTTP logs over the desired time range
+| FILTER records where http_method equals ""GET""
+| FILTER records where http_status equals 200
+| FILTER records where url matches any of:
+  - contains ""server-info.action?bootstrapStatusProvider.applicationConfig.setupComplete=false""
+  - contains ""server-info.action?bootstrapStatusProvider.applicationConfig.setupComplete=0&""
+| GROUP records by http_user_agent, http_status, http_method, url, url_length, src_ip, dest_ip, data_source
+| DERIVE event_count as the number of records in each group
+| DERIVE first_seen_time as the earliest timestamp in each group
+| DERIVE last_seen_time as the latest timestamp in each group
+| FORMAT first_seen_time and last_seen_time as human-readable timestamps
+| APPLY environment-specific allowlists or suppression rules to remove known benign traffic (if available)
+| OUTPUT first_seen_time, last_seen_time, event_count, http_user_agent, http_status, http_method, url, url_length, src_ip, dest_ip, data_source"
+SAP NetWeaver Visual Composer Exploitation Attempt,
+JetBrains TeamCity Authentication Bypass CVE-2024-27198,
+Confluence Data Center and Server Privilege Escalation,"SEARCH web access logs (e.g., Nginx Access) within the analysis time window
+| FILTER http_status == 200
+| FILTER request_url CONTAINS any of [""/setup/setupadministrator.action"", ""/setup/finishsetup.action"", ""/json/setup-restore-local.action"", ""/json/setup-restore-progress.action"", ""/json/setup-restore.action"", ""/bootstrap/selectsetupstep.action""]
+| PARSE fields: user_agent, http_status, http_method, request_url, client_ip, server_ip, log_source, event_time
+| DERIVE url_length = LENGTH(request_url)
+| GROUP BY user_agent, http_status, http_method, request_url, url_length, client_ip, server_ip, log_source
+| AGGREGATE event_count = COUNT(), first_seen = MIN(event_time), last_seen = MAX(event_time)
+| DERIVE first_seen_readable = FORMAT_TIMESTAMP(first_seen), last_seen_readable = FORMAT_TIMESTAMP(last_seen)
+| OUTPUT user_agent, http_status, http_method, request_url, url_length, client_ip, server_ip, log_source, event_count, first_seen, last_seen, first_seen_readable, last_seen_readable"
+Web Remote ShellServlet Access,
+Ivanti Connect Secure Command Injection Attempts,"SEARCH HTTP request/response events from Suricata (or equivalent HTTP network telemetry) containing fields: event_time, src_ip, dest_ip, http_method, url, http_status, user_agent
+| FILTER http_method is one of [""POST"", ""GET""]
+| FILTER http_status equals 200
+| FILTER url matches any of the following wildcard patterns:
+  - ""*/api/v1/totp/user-backup-code/../../system/maintenance/archiving/cloud-server-test-connection*""
+  - ""*/api/v1/totp/user-backup-code/../../license/keys-status/*""
+| GROUP by src_ip, dest_ip, user_agent, url, http_method, http_status
+| AGGREGATE count = number of events per group, first_time = earliest event_time per group, last_time = latest event_time per group
+| FORMAT first_time and last_time as human-readable timestamps
+| APPLY environment-specific suppression or allowlist filters to the aggregated results (e.g., exclude known test systems or scanners)
+| OUTPUT src_ip, dest_ip, user_agent, url, http_method, http_status, count, first_time, last_time"
+Detect malicious requests to exploit JBoss servers,
+Zscaler Exploit Threat Blocked,"SEARCH events from Zscaler Web Proxy logs within the desired time range | FILTER records where action equals ""blocked"" | FILTER records where threatname contains the substring ""exploit"" (case-insensitive) | AGGREGATE event_count = count of events, firstTime = earliest event timestamp, lastTime = latest event timestamp, grouped by user, threatname, src, hostname, fileclass, filename, url, dest | DERIVE firstTime_readable and lastTime_readable by converting firstTime and lastTime into human-readable timestamps | APPLY environment-specific allowlist or suppression rules to the aggregated results (for example, exclude known scanners, test users, or sanctioned testing URLs) | OUTPUT user, threatname, src, hostname, fileclass, filename, url, dest, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Exploit Public-Facing Fortinet FortiNAC CVE-2022-39952,"SEARCH HTTP/web proxy or application firewall logs with fields: timestamp, url, http_method, http_user_agent, status, url_length, src_ip, dest_ip, sourcetype, request_body
+| PARSE url to extract the path component
+| PARSE request_body (and associated headers"
+Zscaler CryptoMiner Downloaded Threat Blocked,"SEARCH web proxy logs | FILTER where action equals ""blocked"" | FILTER where threatname contains the substring ""miner"" (case-insensitive) | GROUP records BY action, deviceowner, user, urlcategory, url, src, dest | COMPUTE count = number of records per group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group | FORMAT firstTime and lastTime as human-readable timestamps | APPLY environment-specific tuning/suppression filters to remove known benign entities (optional) | OUTPUT action, deviceowner, user, urlcategory, url, src, dest, count, firstTime, lastTime"
+Exploit Public Facing Application via Apache Commons Text,"SEARCH Nginx access logs within the desired time range
+| PARSE each event to extract fields: src (client IP), dest (server IP or host), status (HTTP status), http_method, uri_path, uri_query, http_user_agent, timestamp
+| FILTER events where http_method is either ""GET"" or ""POST""
+| GROUP events BY src, dest, status, uri_path, uri_query, http_method, http_user_agent; AGGREGATE request_count = COUNT(), first_seen = MIN(timestamp), last_seen = MAX(timestamp)
+| DERIVE lower_uri_query = LOWERCASE(uri_query, treat null as empty string)
+| DERIVE utf_flag = 2 if lower_uri_query CONTAINS "":utf-8:http"", else 0
+| DERIVE lookup_flag = 2"
+Zscaler Virus Download threat blocked,"SEARCH web proxy logs from the Zscaler secure web gateway
+| FILTER records where action equals ""blocked""
+| FILTER records where threatclass equals ""Virus""
+| FILTER records where threatname exists and is not equal to ""None""
+| AGGREGATE count of records as eventCount, minimum event timestamp as firstTime, and maximum event timestamp as lastTime GROUP BY action, deviceowner, user, urlcategory, url, src, dest
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY allowlist/suppression rules to remove known benign deviceowners, users, URLs, or destinations
+| OUTPUT action, deviceowner, user, urlcategory, url, src, dest, eventCount, firstTime, lastTime"
+High Volume of Bytes Out to Url,"SEARCH web access logs (e.g., Nginx Access) within the desired time range
+| PARSE each event to extract: event_time, source_ip, url, destination (host or IP), user_id, application, bytes_outbound (bytes sent from source to the URL)
+| FILTER events where url exists and bytes_outbound > 0
+| GROUP events into 2-minute time windows keyed by [time_window_start, url, source_ip]
+| COMPUTE per group: event_count = COUNT(events), sum_bytes_out = SUM(bytes_outbound), users = DISTINCT_LIST(user_id), apps = DISTINCT_LIST(application), dests = DISTINCT_LIST(destination)
+| FILTER groups where sum_bytes_out > 1070000000
+| APPLY optional allowlist/exception rules to exclude known legitimate urls, destinations, or sources
+| FORMAT fields for output: time_window_start, url, source_ip, sum_bytes_out, event_count, users, apps, dests
+| OUTPUT the resulting groups"
+Supernova Webshell,"SEARCH web server and/or proxy logs containing HTTP requests
+| PARSE fields needed from each event: timestamp, source address, destination address or host, full URL, user identity (if present), HTTP user agent, product/vendor identifier (if present)
+| FILTER events where URL contains ""logoimagehandler.ashx"" AND URL contains any of [""codes"", ""clazz"", ""method"", ""args""]
+| DERIVE time_bucket = floor(timestamp to 1-second intervals)
+| GROUP events by source address, destination address/host, URL, product/vendor identifier, user identity, HTTP user agent, time_bucket
+| COMPUTE count = number of events in each group
+| OUTPUT fields: time_bucket, source address, destination address/host, URL, product/vendor identifier, user identity, HTTP user agent, count"
+Detect attackers scanning for vulnerable JBoss servers,"SEARCH web or HTTP access logs
+| FILTER http_method IN [""GET"",""HEAD""]
+| FILTER url CONTAINS ANY OF [""/web-console/ServerInfo.jsp"", ""web-console"", ""jmx-console"", ""invoker""]
+| GROUP BY http_method, url, source_ip, destination_ip
+| COMPUTE event_count = COUNT(), first_time = MIN(timestamp), last_time = MAX(timestamp)
+| DERIVE first_time_readable = CONVERT_TIME(first_time), last_time_readable = CONVERT_TIME(last_time)
+| APPLY optional exclusions for known benign sources, destinations, or URL patterns (organization-defined allowlist)
+| OUTPUT http_method, url, source_ip, destination_ip, event_count, first_time, last_time, first_time_readable, last_time_readable"
+Windows Exchange Autodiscover SSRF Abuse,
+CrushFTP Authentication Bypass Exploitation,"SEARCH events from CrushFTP logs
+| PARSE user and src_ip from a bracketed HTTP segment in the message formatted like ""[HTTP:<something>:<user>:<src_ip>]""
+| PARSE process command from the message by extracting the value that follows ""cmd:"" up to the next delimiter or end of line
+| FILTER events where process exists
+| FILTER events where process contains any of the following keywords: ""mesch.exe"", ""b64exec"", ""fullinstall"", ""run""
+| GROUP events by src_ip, user, process and COMPUTE count of events, earliest event time as firstTime, latest event time as lastTime
+| DERIVE firstTimeReadable and lastTimeReadable as human-readable representations of firstTime and lastTime
+| OUTPUT src_ip, user, process, count, firstTime, lastTime, firstTimeReadable, lastTimeReadable"
+Citrix ADC and Gateway CitrixBleed 2 Memory Disclosure,"SEARCH HTTP network traffic logs (e.g., Suricata) within the chosen time range |
+PARSE fields: event_time, http_method, http_status, url, url_length, http_user_agent, src_ip, dest_ip, sourcetype |
+FILTER where http_method equals ""POST"" |
+FILTER where http_status equals 200 |
+FILTER where url contains ""/p/u/doAuthentication.do"" |
+GROUP by http_user_agent, http_status, http_method, url, url_length, src_ip, dest_ip, sourcetype COMPUTE event_count = count(), first_seen_time = min"
+Monitor Web Traffic For Brand Abuse,"SEARCH web traffic logs for events that contain a URL within the desired time range
+| PARSE fields from each event: src (client/source identifier), url, event_time
+| GROUP records BY src COMPUTE urls_set = distinct list of url, first_seen_time = minimum(event_time"
+Hunting for Log4Shell,
+Juniper Networks Remote Code Execution Exploit Detection,
+CrushFTP Max Simultaneous Users From IP,"SEARCH CrushFTP log records within the desired time range
+| FILTER records where the message text contains the phrase ""User access not allowed.  Max simultaneous users from your IP""
+| PARSE each record to extract:
+  - user from the HTTP bracketed segment as the third token inside ""[HTTP:...:user:src_ip]""
+  - src_ip from the HTTP bracketed segment as the fourth token inside ""[HTTP:...:user:src_ip]"" (IPv4 dotted decimal)
+  - event_time from the record’s timestamp
+| GROUP records by src_ip
+| COMPUTE for each group:
+  - count = number of records in the group
+  - firstTime = minimum event_time
+  - lastTime = maximum event_time
+  - users = unique list of user values observed in the group
+| FILTER groups where count >= 3
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY optional environment-specific allowlist/suppression to remove expected or known-benign src_ip values
+| OUTPUT src_ip, count, firstTime, lastTime, users"
+Ivanti EPMM Remote Unauthenticated API Access CVE-2023-35078,"SEARCH HTTP traffic events from Suricata or other web/HTTP logs within the desired time range
+| PARSE fields needed for HTTP analysis: timestamp, client_ip, server_ip, url, http_method, http_status, user_agent, source
+| DERIVE url_path and query_string from url; DERIVE url_length as character length of url; DERIVE normalized_path as lowercase(url_path)
+| FILTER http_status equals 200
+| FILTER normalized_path equals ""/mifs/aad/api/v2/authorized/users"" AND query_string exists AND query_string length > 0
+| GROUP BY user_agent, http_status, http_method, url, url_length, client_ip, server_ip, source
+| AGGREGATE count as event_count, earliest(timestamp) as first_seen, latest(timestamp) as last_seen
+| FILTER out events matching environment-specific allowlists (e.g., known scanners or approved management hosts), if available
+| OUTPUT first_seen, last_seen, event_count, user_agent, http_status, http_method, url, url_length, client_ip, server_ip, source"
+Zscaler Adware Activities Threat Blocked,"SEARCH Zscaler web proxy logs
+| FILTER events where action equals ""blocked""
+| FILTER events where threatname contains ""adware"" (case-insensitive)
+| GROUP events by action, deviceowner, user, urlcategory, url, src, dest
+| COMPUTE for each group: event_count = count of events, firstTime = earliest timestamp, lastTime = latest timestamp
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY analytic-specific allowlist/suppression to remove known benign adware detections or entities
+| OUTPUT action, deviceowner, user, urlcategory, url, src, dest, event_count, firstTime, lastTime"
+Multiple Archive Files Http Post Traffic,"SEARCH HTTP stream telemetry where http_method equals POST |
+DERIVE archive_hdr1 as the first 2 characters of form_data; DERIVE archive_hdr2 as the first 4 characters of form_data |
+GROUP records BY src_ip, dest_ip, http_method, http_user_agent, uri_path, url, bytes_in, bytes_out, archive_hdr1, archive_hdr2; AGGREGATE count of records as count, earliest _time as firstTime, latest _time as lastTime, and the set of unique form_data values as http_request_body |
+FILTER groups where count is greater than 20 AND (archive_hdr1 equals """
+VMware Workspace ONE Freemarker Server-side Template Injection,
+Ivanti Connect Secure System Information Access via Auth Bypass,"SEARCH HTTP traffic logs from network IDS or web gateway over the desired time range
+| FILTER http_method equals ""GET""
+| FILTER url contains the substring ""/api/v1/totp/user-backup-code/../../system/system-information""
+| FILTER http_status equals 200
+| GROUP records BY src_ip, dest_ip, http_user_agent, url
+| COMPUTE event_count = count(records in group)
+| COMPUTE first_seen_time = earliest(timestamp in group)
+| COMPUTE last_seen_time = latest(timestamp in group)
+| DERIVE first_seen_readable = convert first_seen_time to human-readable format
+| DERIVE last_seen_readable = convert last_seen_time to human-readable format
+| APPLY optional environment-specific suppression filters (e.g., known benign sources or maintenance windows)
+| OUTPUT src_ip, dest_ip, http_user_agent, url, event_count, first_seen_time, last_seen_time, first_seen_readable, last_seen_readable"
+PaperCut NG Remote Web Access Attempt,
+Citrix ADC and Gateway Unauthorized Data Disclosure,"SEARCH HTTP traffic logs (e.g., web server, WAF, proxy, IDS/IPS such as Suricata)
+| PARSE events to extract fields: timestamp, url, http_status_code, http_method, http_user_agent, src_ip, dest_ip, source_type
+| DERIVE url_length = length(url)
+| FILTER url contains ""/oauth/idp/.well-known/openid-configuration""
+| FILTER http_status_code equals 200
+| GROUP by http_user_agent, http_status_code, http_method, url, url_length, src_ip, dest_ip, source_type
+| COMPUTE per group: event_count = count(), firstTime = min(timestamp), lastTime = max(timestamp)
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY environment-specific suppression filters to remove known benign sources or patterns
+| OUTPUT http_user_agent, http_status_code, http_method, url, url_length, src_ip, dest_ip, source_type, event_count, firstTime, lastTime"
+Tomcat Session Deserialization Attempt,"SEARCH Nginx Access logs over the selected time range |
+FILTER records where http_method equals ""GET"" |
+FILTER records where cookie contains the substring ""JSESSIONID="" |
+FILTER records where status equals 500 |
+GROUP records by src, dest, http_user_agent, uri_path, cookie, status |
+COMPUTE count = number of records per group, firstTime = earliest event_time per group, lastTime = latest event_time per group |
+FILTER groups where cookie matches the regex ""^JSESSIONID=\."" (JSESSIONID value begins with a dot) |
+PARSE cookie to extract cookie_path as the substring after ""JSESSIONID=."" up to the first "";"" delimiter |
+DERIVE severity = ""High"" |
+FORMAT firstTime and lastTime as human-readable timestamps |
+APPLY environment-specific allowlist or suppression logic for known benign sources or patterns (if configured) |
+OUTPUT src, dest, http_user_agent, uri_path, cookie, cookie_path, status, count, firstTime, lastTime, severity"
+F5 TMUI Authentication Bypass,"SEARCH HTTP/S traffic logs (e.g., from IDS/IPS or web gateway) containing request/response metadata and timestamps
+| PARSE fields: timestamp, url, http_method, status_code, http_user_agent, source_ip, destination_ip, url_length (compute url_length from url if not provided)
+| FILTER url matches wildcard pattern ""*/mgmt/tm/auth/user/*""
+| FILTER http_method equals ""PATCH""
+| FILTER status_code equals 200
+| GROUP BY http_user_agent, status_code, http_method, url, url_length, source_ip, destination_ip, log_source_type
+| COMPUTE event_count = count of"
+Confluence Unauthenticated Remote Code Execution CVE-2022-26134,
+Spring4Shell Payload URL Request,
+Zscaler Employment Search Web Activity,"SEARCH Zscaler web proxy logs within the desired time range
+| FILTER records where urlsupercategory equals ""Job/Employment Search""
+| SELECT fields: timestamp, action, deviceowner, user, urlcategory, url, src, dest
+| GROUP records BY action, deviceowner, user, urlcategory, url, src, dest
+| COMPUTE for each group: count = number of records, firstTime = minimum timestamp, lastTime = maximum timestamp
+| FORMAT firstTime and lastTime as readable date-time strings
+| FILTER aggregated results using environment-specific suppression criteria (e.g., exclude known test accounts or approved destinations), if available
+| OUTPUT fields: action, deviceowner, user, urlcategory, url, src, dest, count, firstTime, lastTime"
+JetBrains TeamCity Authentication Bypass Suricata CVE-2024-27198,"SEARCH Suricata HTTP network logs
+| PARSE fields: timestamp, source_ip, destination_ip, http_method, http_status, http_url, http_user_agent
+| FILTER http_method equals ""POST""
+| FILTER http_status equals 200
+| FILTER any of:
+    - (http_url contains ""?jsp="" AND http_url contains "";.jsp"")
+    - http_url contains ""jsp=/app/rest/users;.jsp""
+    - http_url contains ""?jsp=/app/rest/users;.jsp""
+    - http_url matches pattern ""?jsp="" followed by any characters then ""/app/rest/users/id:{any}/tokens;"" (where {any} is any non-empty value)
+| GROUP BY source_ip, destination_ip, http_user_agent, http"
+Zscaler Potentially Abused File Download,"SEARCH Zscaler web proxy logs | FILTER events where field url ends with any of ["".scr"", "".dll"", "".bat"", "".lnk""] (case-insensitive) | GROUP records by deviceowner, user, urlcategory, url, src, filename, dest | COMPUTE count = number of records per group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group | FORMAT firstTime and lastTime as human-readable timestamps (retain original values if needed) | APPLY environment-specific suppression to remove known benign or testing-related groups (if configured) | OUTPUT deviceowner, user, urlcategory, url, src, filename, dest, count, firstTime, lastTime"
+Adobe ColdFusion Unauthenticated Arbitrary File Read,"SEARCH web/HTTP events from Suricata or equivalent network/web logs
+| PARSE fields from each event: timestamp, url_path, http_status, http_method, http_user_agent, src_ip, dest_ip, data_source
+| FILTER events where url_path matches the pattern ""/cf_scripts/scripts/ajax/ckeditor/*""
+| FILTER events where http_status equals 200
+| DERIVE url_length as the character length of url_path if not already present
+| GROUP events by http_user_agent, http_status, http_method, url_path, url_length, src_ip, dest_ip, data_source
+| COMPUTE for each group: event_count = number of events, first_observed_time = earliest timestamp, last_observed_time = latest timestamp
+| FORMAT first_observed_time and last_observed_time into human-readable form
+| APPLY optional suppression for known benign sources or maintenance traffic specific to this path if available
+| OUTPUT http_user_agent, http_status, http_method, url_path, url_length, src_ip, dest_ip, data_source, event_count, first_observed_time, last_observed_time"
+ConnectWise ScreenConnect Authentication Bypass,
+Citrix ShareFile Exploitation CVE-2023-24489,"SEARCH HTTP request events from web/HTTP telemetry (fields should include at minimum: event_time, url, http_method, http_status, http_user_agent, src_ip, dest_ip, source_type) |
+FILTER http_method equals ""POST"" |
+FILTER url starts with ""/documentum/upload.aspx?"" |
+FILTER url contains any of the substrings [""parentid="", ""filename="", ""uploadId=""] |
+FILTER url also contains any of the substrings [""unzip="", ""raw=""] |
+DERIVE url_length as the number of characters in url |
+GROUP BY http_user_agent, http_status, http_method, url, url_length, src_ip, dest_ip, source_type |
+COMPUTE count as the number of events in each group, firstTime as the minimum event_time in the group, lastTime as the maximum event_time in the group |
+FORMAT firstTime and lastTime as human-readable timestamps |
+APPLY optional environment-specific allowlist filters to remove known legitimate sources, destinations, or user agents |
+OUTPUT firstTime, lastTime, count, http"
+Ivanti EPMM Remote Unauthenticated API Access CVE-2023-35082,"SEARCH web access logs (including Suricata HTTP logs) over the desired time window
+PARSE fields from each record: timestamp, url, status_code, http_method, http_user_agent, src_ip, dest_ip, log_source
+DERIVE url_length as the character length of url if not already present
+FILTER records where url path starts with ""/mifs/asfV3/api/v2/"" (case-insensitive match)
+FILTER records where status_code equals 200
+GROUP remaining records BY http_user_agent, status_code, http_method, url, url_length, src_ip, dest_ip, log_source
+COMPUTE event_count as the number of records per group; first_seen as the earliest timestamp in the group; last_seen as the latest timestamp in the group
+FORMAT first_seen and last_seen as human-readable timestamps
+APPLY optional allowlist to exclude known benign entities (e.g., src_ip, dest_ip, http_user_agent, log_source) per environment policy
+OUTPUT event_count, first_seen, last_seen, http_user_agent, status_code, http_method, url, url_length, src_ip, dest_ip, log_source"
+Access to Vulnerable Ivanti Connect Secure Bookmark Endpoint,"SEARCH HTTP/web traffic telemetry (e.g., from IDS/proxy/web gateways) within the selected time range, retrieving fields: timestamp, src_ip, dest_ip, http_method, http_status, url, http_user_agent, log_source |
+FILTER records where http_method equals ""GET"" |
+FILTER records where http_status equals 403 |
+FILTER records where url contains ""/api/v1/configuration/users/user-roles/user-role/rest-userrole1/web/web-bookmarks/bookmark"" |
+GROUP records BY src_ip, dest_ip, http_user_agent, http_status, url, log_source |
+COMPUTE per group: event_count = count, first_seen = minimum(timestamp), last_seen = maximum(timestamp) |
+FORMAT first_seen and last_seen as human-readable timestamps |
+APPLY environment-specific suppression rules or allowlists to remove known benign sources if available |
+OUTPUT src_ip, dest_ip, http_user_agent, http_status, url, log_source, event_count, first_seen, last_seen"
+WS FTP Remote Code Execution,"SEARCH events from Suricata that contain HTTP request/response data
+| PARSE fields: timestamp, http_method, http_status, url_path, http_user_agent, url_length, src_ip, dest_ip, sourcetype
+| FILTER http_method equals ""POST""
+| FILTER url_path equals ""/AHT/AhtApiService.asmx/AuthUser""
+| FILTER http_status equals 200
+| GROUP BY http_user_agent, http_status, http_method, url_path, url_length, src_ip, dest_ip, sourcetype
+| COMPUTE event_count for each group, earliest timestamp as firstTime, latest timestamp as lastTime
+| DERIVE human-readable representations of firstTime and lastTime
+| APPLY optional environment-specific allowlist filters to exclude known benign sources or user agents
+| OUTPUT firstTime, lastTime, event_count, http_user_agent, http_status, http_method, url_path, url_length, src_ip, dest_ip, sourcetype"
+Fortinet Appliance Auth bypass,
+Java Class File download by Java User Agent,"SEARCH web/proxy/http traffic logs
+| FILTER records where http_user_agent contains ""Java""
+| FILTER records where http_method equals ""GET""
+| FILTER records where url contains "".class""
+| GROUP records BY http_user_agent, http_method, url, url_length, src_ip, dest_ip
+| AGGREGATE count = number of records, first_seen_time = minimum timestamp, last_seen_time = maximum timestamp per group
+| DERIVE human_readable_first_seen_time and human_readable_last_seen_time from first_seen_time and last_seen_time
+| APPLY allowlist exclusions to remove known benign user agents, URLs, source IPs, or destination IPs (if such lists exist)
+| OUTPUT http_user_agent, http_method, url, url_length, src_ip, dest_ip, count, human_readable_first_seen_time, human_readable_last_seen_time"
+Log4Shell JNDI Payload Injection Attempt,
+Ivanti Sentry Authentication Bypass,"SEARCH Suricata HTTP network logs for HTTP request/response events
+| PARSE fields: timestamp, url (path), http_status, http_method, http_user_agent, src_ip, dest_ip, source_category
+| DERIVE url_length = LENGTH(url) IF url_length is missing
+| FILTER url STARTS_WITH ""/mics/services/configservice/"" OR url STARTS_WITH ""/mics/services/"" OR url STARTS_WITH ""/mics/services/MICSLogService""
+| FILTER http_status == 200
+| GROUP BY http_user_agent, http_status, http_method, url, url_length, src_ip, dest_ip, source_category
+| COMPUTE event_count = COUNT(), first_time = MIN(timestamp), last_time = MAX(timestamp)
+| DERIVE first_time_readable = FORMAT_TIMESTAMP(first_time), last_time_readable = FORMAT_TIMESTAMP(last_time)
+| APPLY suppression rules to remove known benign sources or URLs (if defined)
+| OUTPUT http_user_agent, http_status, http_method, url, url_length, src_ip, dest_ip, source_category, event_count, first_time, last_time, first_time_readable, last_time_readable"
+Adobe ColdFusion Access Control Bypass,

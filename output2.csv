@@ -1,0 +1,325 @@
+name,response
+Zscaler Phishing Activity Threat Blocked,"SEARCH web proxy log events |
+FILTER action equals ""blocked"" |
+FILTER threatname starts with ""HTML.Phish"" |
+GROUP events BY action, deviceowner, user, threatname, url, src, dest |
+COMPUTE for each group: event_count = number of events, first_time = earliest event timestamp, last_time = latest event timestamp |
+DERIVE first_time_readable by converting first_time to a human-readable datetime |
+DERIVE last_time_readable by converting last_time to a human-readable datetime |
+FILTER out grouped results matching any organization-defined allowlists or suppression criteria (optional) |
+OUTPUT action, deviceowner, user, threatname, url, src, dest, event_count, first_time, last_time, first_time_readable, last_time_readable"
+Detect F5 TMUI RCE CVE-2020-5902,"SEARCH device logs from F5 BIG-IP, BIG-IQ, and Traffix SDC appliances over the desired time range
+| PARSE each event to extract fields such as timestamp, source_ip, destination_ip, destination_host, http_method, http_path, http_query_string, http_url, http_request_line, user_agent, status_code, and raw_message
+| DERIVE searchable_text by concatenating available HTTP request artifacts and the raw_message (e.g., http_request_line + "" "" + http_url + "" "" + http_path + ""?"" + http_query_string + "" "" + raw_message)
+| FILTER events where searchable_text contains either the substring ""hsqldb;"" OR the sequence ""..;"" (two literal dots followed by a semicolon), indicating known exploit patterns for CVE-2020-5902
+| APPLY environment-specific suppression filters to remove known benign sources or patterns (for example, trusted scanners, maintenance hosts, or allowlisted IPs/domains)
+| OUTPUT matching events with fields: timestamp, source_ip, destination_ip, destination_host, http_method, http_url or composed http_path+http_query_string, user_agent, status_code (if present), and a snippet of raw_message for triage"
+Detect Web Access to Decommissioned S3 Bucket,
+Web Spring Cloud Function FunctionRouter,"SEARCH web/HTTP request telemetry within the chosen time window |
+PARSE each event to extract: http_method, url, http_user_agent, src_ip, dest_ip, http_status, source_type, timestamp |
+DERIVE url_length = length(url) if not already present |
+FILTER events where http_method == ""POST"" |
+FILTER events where url contains ""/functionRouter"" (substring match) |
+SELECT fields: http_user_agent, http_method, url, url_length, src_ip, dest_ip, http_status, source_type, timestamp |
+GROUP events BY http_user_agent, http_method, url, url_length, src_ip, dest_ip, http_status, source_type |
+COMPUTE count = number of events per group, first_seen = earliest timestamp in group, last_seen = latest timestamp in group |
+OUTPUT fields: http_user_agent, http_method, url, url_length, src_ip, dest_ip, http_status, source_type, count, first_seen, last_seen"
+Web JSP Request via URL,"SEARCH HTTP access logs (e.g., Nginx access) |
+FILTER records where http_method equals ""GET"" |
+FILTER records where url matches any of the patterns [""*.jsp?cmd=*"", ""*j&cmd=*""] |
+DERIVE url_length = length(url) if url_length is not already present |
+GROUP records by http_user_agent, http_method, url, url_length, source_ip, destination_ip, source_type |
+AGGREGATE count = number of records, first_time = minimum event"
+Zscaler Malware Activity Threat Blocked,"SEARCH web proxy security logs within the selected time range
+| PARSE fields: event_time, action, threatname, threatcategory, deviceowner, user, urlcategory, url, src, dest
+| FILTER action equals ""blocked""
+| FILTER threatname contains ""malware""
+| FILTER threatcategory exists AND threatcategory not equal to ""None""
+| GROUP BY action, deviceowner, user, urlcategory, url, src, dest
+| COMPUTE count = number of events in group; firstTime = minimum(event_time); lastTime = maximum(event_time)
+| FORMAT firstTime and lastTime into human-readable timestamps as firstTimeReadable, lastTimeReadable
+| APPLY organization-defined suppression filters to exclude known benign entities or patterns across deviceowner, user, urlcategory, url, src, dest
+| OUTPUT action, deviceowner, user, urlcategory, url, src, dest, count, firstTime, lastTime, firstTimeReadable, lastTimeReadable"
+Detect Remote Access Software Usage URL,"SEARCH Palo Alto Networks threat/network logs that contain web/HTTP activity
+| PARSE fields: timestamp, action, src_ip, category, url_domain, url_length, http_method, http_user_agent, url, user, dest
+| GROUP records BY action, src_ip, category, url_domain, url_length
+| COMPUTE for each group: event_count = count(), first_time = min(timestamp), last_time = max(timestamp)
+| DERIVE for each group the most recent-by-timestamp values: http_method_latest, http_user_agent_latest, url_latest, user_latest, dest_latest
+| FORMAT first_time and last_time as human-readable timestamps
+| JOIN each group WITH reference dataset ""remote_access_software"" ON url_domain = remote_domain SELECT fields from reference: isutility, signature (from description), desc (from comment_reference), software_category (from category)
+| FILTER where isutility = true
+| APPLY environment-specific exception list to remove known/authorized remote access software usage
+| APPLY analytic-specific suppression filters as configured for this detection
+| OUTPUT action, src_ip, category, url_domain, url_length, http_method_latest AS http_method, http_user_agent_latest AS http_user_agent, url_latest AS url, user_latest AS user, dest_latest AS dest, event_count, first_time, last_time, signature, desc, software_category"
+ProxyShell ProxyNotShell Behavior Detected,
+Zscaler Legal Liability Threat Blocked,"SEARCH events from Zscaler web proxy logs within the selected time range
+| PARSE fields: timestamp, action, deviceowner, user, urlcategory, urlclass, url, src, dest
+| FILTER records where urlclass equals ""Legal Liability""
+| GROUP records by action, deviceowner, user, urlcategory, url, src, dest
+| COMPUTE per group: event_count = count of records; first_seen_time = minimum timestamp; last_seen_time = maximum timestamp
+| FORMAT first_seen_time and last_seen_time as human-readable timestamps
+| REMOVE_DUPLICATES so that only one record per urlcategory is retained (keep the first encountered)
+| APPLY environment-specific suppression or allowlist rules for this detection (if defined)
+| OUTPUT fields: action, deviceowner, user, urlcategory, url, src, dest, event_count, first_seen_time, last_seen_time"
+Jenkins Arbitrary File Read CVE-2024-23897,"SEARCH web server access logs (e.g., Nginx access)
+| PARSE each event to extract timestamp, src_ip, dest_ip, http_method, url, status_code, http_user_agent
+| FILTER events where http_method equals ""POST""
+| FILTER events where status_code equals 200
+| FILTER events where url contains the substring ""/cli?remoting=false""
+| GROUP events by src_ip, dest_ip, http_user_agent, url, status_code, http_method
+| COMPUTE event_count as the number of events per group, first_seen_time as the minimum timestamp per group, last_seen_time as the maximum timestamp per group
+| DERIVE first_seen_time_readable and last_seen_time_readable from first_seen_time and last_seen_time using human-readable time conversion
+| APPLY allowlist exclusions (if available) to remove known-benign src_ip, dest_ip, http_user_agent, or url combinations
+| FORMAT output fields: src_ip, dest_ip, http_user_agent, url, status_code, http_method, event_count, first_seen_time, last_seen_time, first_seen_time_readable, last_seen_time_readable
+| OUTPUT results"
+Unusually Long Content-Type Length,"SEARCH HTTP request events from web/proxy/network telemetry where fields src, dest, url, http_user_agent, http_content_type, and timestamp are present | GROUP events BY src, dest, url, http_user_agent, http_content_type CALCULATE count, earliest(timestamp) AS firstTime, latest(timestamp) AS lastTime | DERIVE http_content_type_length = LENGTH(http_content_type) | FILTER http_content_type_length > 100 | SELECT firstTime, lastTime, src, dest, http_content_type_length, http_content_type, url, http_user_agent | FORMAT firstTime, lastTime AS human-readable timestamps | APPLY environment-specific allowlists to exclude known benign sources, destinations, user agents, or content types (optional) | OUTPUT results"
+Ivanti Connect Secure SSRF in SAML Component,"SEARCH Suricata HTTP events
+| PARSE fields: timestamp, src_ip, dest_ip, url, http_method, status, user_agent
+| FILTER http_method equals ""POST"" (case-insensitive)
+| FILTER status equals 200
+| FILTER url contains any of:
+  - ""/dana-ws/saml20.ws""
+  - ""/dana-ws/saml.ws""
+  - ""/dana-ws/samlecp.ws""
+  - ""/dana-na/auth/saml-logout.cgi""
+  (allow additional path segments before or after these substrings)
+| GROUP BY src_ip, dest_ip, user_agent, url, status, http_method
+| COMPUTE count of events per group, earliest timestamp as firstTime, latest timestamp as lastTime
+| OUTPUT src_ip, dest_ip, user_agent, url, status, http_method, count, firstTime, lastTime
+| SORT by lastTime descending"
+Zscaler Privacy Risk Destinations Threat Blocked,"SEARCH Zscaler web proxy logs |
+FILTER records where action equals ""blocked"" |
+FILTER records where urlclass equals ""Privacy Risk"" |
+GROUP records by action, deviceowner, user, urlcategory, url, src, dest |
+COMPUTE for each group: count = total number of records, firstTime = earliest event time, lastTime = latest event time |
+DEDUPLICATE groups to retain a single record per urlcategory, keeping the first encountered group if multiples exist |
+FORMAT firstTime and lastTime as human-readable timestamps |
+APPLY optional environment-specific suppression filters (e.g., allowlists or known-benign destinations) if available |
+OUTPUT fields: action, deviceowner, user, urlcategory, url, src, dest, count, firstTime, lastTime"
+Web Spring4Shell HTTP Request Class Module,"SEARCH HTTP request telemetry that includes method, client and server addresses, user agent, URI path, full URL, byte counts, event time, and request body/form data
+| FILTER records where http_method equals ""POST""
+| GROUP records by src, dest, http_method, http_user_agent, uri_path, url, bytes_in, bytes_out
+| AGGREGATE within each group:
+  - http_request_body = combined unique values of form_data across the grouped records
+  - firstTime = earliest event_time in the group
+  - lastTime = latest event_time in the group
+  - count = number of records in the group
+| FILTER groups where ANY value in http_request_body matches at least one of the following patterns:
+  - contains ""class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat="" with any trailing characters
+  - contains ""class.module.classLoader.resources.context.parent.pipeline.first.pattern""
+  - contains ""suffix=.jsp""
+| FORMAT firstTime and lastTime into human-readable timestamps (retain original epoch values)
+| OUTPUT src, dest, http_method, http_user_agent, uri_path, url, bytes_in, bytes_out, http_request_body, firstTime, lastTime, count"
+Nginx ConnectWise ScreenConnect Authentication Bypass,
+VMware Server Side Template Injection Hunt,"SEARCH web/proxy HTTP request logs over the desired time range
+| PARSE fields needed from each event: timestamp, http_method, url, http_user_agent, src_ip, dest_ip, log_source
+| DERIVE url_length = length(url)
+| FILTER http_method equals ""GET""
+| FILTER url contains substring ""deviceudid=""
+| FILTER url contains any of [""java.lang.ProcessBuilder"", ""freemarker.template.utility.ObjectConstructor""]
+| GROUP BY http_user_agent, http_method, url, url_length, src_ip, dest_ip, log_source
+| COMPUTE count = number of matching events per group, first_seen_time = minimum(timestamp), last_seen_time = maximum(timestamp)
+| DERIVE first_seen_time_readable = convert first_seen_time to human-readable format, last_seen_time_readable = convert last_seen_time to human-readable format
+| APPLY optional suppression filters for known benign sources, destinations, or URL patterns (if available)
+| OUTPUT http_user_agent, http_method, url, url_length, src_ip, dest_ip, count, first_seen_time, last_seen_time, first_seen_time_readable, last_seen_time_readable, log_source"
+SQL Injection with Long URLs,"SEARCH web traffic events containing fields: src, dest, url, url_length, http_user_agent, http_user_agent_length, dest_category
+| FILTER dest_category equals ""web_server""
+| FILTER (url_length > 1024) OR (http_user_agent_length > 200)
+| GROUP BY src, dest, url, url_length, http_user_agent
+| COMPUTE event_count = COUNT()
+| DERIVE url_lower = LOWER(url)
+| DERIVE num_sql_cmds = SUM over tokens [
+  ""alter%20table"",
+  ""between"",
+  ""create%20table"",
+  ""create%20database"",
+  ""create%20index"",
+  ""create%20view"",
+  ""delete"",
+  ""drop%20database"",
+  ""drop%20index"",
+  ""drop%20table"",
+  ""exists"",
+  ""exec"",
+  ""group%20by"",
+  ""having"",
+  ""insert%20into"",
+  ""inner%20join"",
+  ""left%20join"",
+  ""right%20join"",
+  ""full%20join"",
+  ""select"",
+  ""distinct"",
+  ""select%20top"",
+  ""union"",
+  ""xp_cmdshell""
+] of COUNT_OCCURRENCES(url_lower, token)
+| FILTER num_sql_cmds > 3
+| OUTPUT src, dest, url, url_length, http_user_agent, event_count, num_sql_cmds"
+VMWare Aria Operations Exploit Attempt,"SEARCH web proxy, web gateway, or firewall threat logs within the desired time range, ensuring fields for event_time, url, http_method, response_status, user_agent, src_ip, and dest_ip are available | 
+FILTER http_method equals ""POST"" | 
+FILTER url path contains the substring ""/saas./resttosaasservlet"" (match anywhere in the URL) | 
+FILTER response_status equals ""200"" OR response_status equals ""unknown"" | 
+DERIVE url_length as the character length of url if not already present | 
+GROUP BY user_agent, response_status, http_method, url, url_length, src_ip, dest_ip, log_source | 
+COMPUTE event_count as the number of events per group, first_observed as the minimum event_time per group, last_observed as the maximum event_time per group | 
+FORMAT first_observed and last_observed as human-readable timestamps | 
+APPLY optional exclusion list to remove known benign sources, user agents, or URLs if available | 
+OUTPUT first_observed, last_observed, event_count, user_agent, response_status, http_method, url, url_length, src_ip, dest_ip, log_source"
+Microsoft SharePoint Server Elevation of Privilege,"SEARCH HTTP or web access telemetry containing fields: event_time, url, http_method, http_status_code, http_user_agent, url_length, src_ip, dest_ip, log_source_type
+| FILTER url path begins with ""/_api/web/siteusers"" OR ""/_api/web/currentuser""
+| FILTER http_method equals ""GET""
+| FILTER http_status_code equals 200
+| GROUP BY http_user_agent, http_status_code, http_method, url, url_length, src_ip, dest_ip, log_source_type
+| COMPUTE event_count = count(), first_seen = min(event_time), last_seen = max(event_time)
+| DERIVE first_seen_readable = to_readable_time(first_seen), last_seen_readable = to_readable_time(last_seen)
+| OUTPUT http_user_agent, http_status_code, http_method, url, url_length, src_ip, dest_ip, log_source_type, event_count, first_seen_readable, last_seen_readable"
+JetBrains TeamCity Limited Auth Bypass Suricata CVE-2024-27199,"SEARCH network IDS HTTP events (e.g., Suricata HTTP logs) |
+FILTER where http_method equals ""GET"" |
+FILTER where http_status equals 200 |
+FILTER where url matches any of:
+  - contains ""../admin/diagnostic.jsp""
+  -"
+Ivanti EPM SQL Injection Remote Code Execution,"SEARCH HTTP network telemetry from Suricata (or any logs capturing HTTP requests/responses) with fields: event_time, client_ip,"
+Log4Shell JNDI Payload Injection with Outbound Connection,
+Zscaler Behavior Analysis Threat Blocked,"SEARCH web proxy records from the Zscaler proxy dataset within the desired time window
+| FILTER records where action equals ""blocked""
+| FILTER records where threatclass equals ""Behavior Analysis""
+| FILTER records where threatname exists and threatname is not equal to ""None""
+| GROUP records BY action, deviceowner, user, threatname, url, src, dest
+| AGGREGATE per group: count = number of records, firstTime = earliest event timestamp, lastTime = latest event timestamp
+| DERIVE firstTimeReadable = human-readable representation of firstTime, lastTimeReadable = human-readable representation of lastTime
+| APPLY optional environment-specific suppression (e.g., exclude known benign users, URLs, sources, or threatnames)
+| OUTPUT action, deviceowner, user, threatname, url, src, dest, count, firstTime, lastTime, firstTimeReadable, lastTimeReadable"
+Windows SharePoint Spinstall0 GET Request,"SEARCH HTTP request events from Suricata (or equivalent network/HTTP logs) |
+FILTER events where url contains ""/_layouts/15/spinstall0.aspx"" |
+FILTER events where http_method equals ""GET"" |
+DERIVE url_length as the character length of url if not already present |
+GROUP BY url, source_ip, destination_ip, http_status, http_user_agent, url_length, event_source |
+COMPUTE event_count = number of events in group, first_seen_time = earliest event_time in group, last_seen_time = latest event_time in group |
+CONVERT first_seen_time and last_seen_time to human-readable timestamps |
+APPLY environment-specific allowlists or suppression rules to remove known benign traffic |
+OUTPUT url, source_ip, destination_ip, http_status, http_user_agent, url_length, event_source, event_count, first_seen_time, last_seen_time"
+JetBrains TeamCity RCE Attempt,"SEARCH HTTP network telemetry records from web/IDS logs (e.g., Suricata) within the analysis time window
+| FILTER http_method equals ""POST""
+| FILTER url starts with ""/app/rest/users/id:1/tokens/RPC2""
+| FILTER http_status equals 200
+| SELECT timestamp, source_ip, destination_ip, url, url_length, http_method, http_status, http_user_agent, event_source_type
+| GROUP BY http_user_agent, http_status, http_method, url, url_length, source_ip, destination_ip, event_source_type
+| DERIVE event_count = COUNT(), first_seen = MIN(timestamp), last_seen = MAX(timestamp)
+| DERIVE first_seen_readable = TO_HUMAN_TIME(first_seen), last_seen_readable = TO_HUMAN_TIME(last_seen)
+| APPLY organization_specific_allowlist to exclude known benign user agents, sources, or health checks
+| OUTPUT event_count, first_seen, last_seen, first_seen_readable, last_seen_readable, http_user_agent, http_status, http_method, url, url_length, source_ip, destination_ip, event_source_type"
+Confluence Pre-Auth RCE via OGNL Injection CVE-2023-22527,"SEARCH network/HTTP telemetry (e.g., Suricata) within the selected time range with fields [timestamp, source_ip, destination_ip, http_method, http_status, url, http_user_agent]
+| FILTER url CONTAINS ""/template/aui/text-inline.vm""
+| FILTER http_method EQUALS ""POST""
+| FILTER http_status IN [200, 202]
+| GROUP BY source_ip, destination_ip, http_user_agent, url, http_status
+| COMPUTE event_count = COUNT(), first_time = MIN(timestamp), last_time = MAX(timestamp)
+| DERIVE first_time_readable = CONVERT_TIME(first_time), last_time_readable = CONVERT_TIME(last_time)
+| APPLY optional_exclusions USING reference lists of known benign scanners/health checks/automation matching on source_ip, http_user_agent, or url patterns
+| OUTPUT [source_ip, destination_ip, http_user_agent, url, http_status, event_count, first_time, last_time, first_time_readable, last_time_readable]"
+Plain HTTP POST Exfiltrated Data,"SEARCH HTTP network stream telemetry
+| FILTER events where http_method equals ""POST""
+| FILTER events where form_data contains any of: ""wermgr.exe"", ""svchost.exe"", ""name=\""proclist\"""", ""ipconfig"", ""name=\""sysinfo\"""", ""net view""
+| GROUP events BY src_ip, dest_ip, http_method, http_user_agent, uri_path, url, bytes_in, bytes_out
+| COMPUTE for each group: http_request_body = distinct list of form_data values, firstTime = earliest event timestamp, lastTime = latest event timestamp, count = number of events
+| DERIVE firstTime_readable = convert firstTime to human-readable time, lastTime_readable = convert lastTime to human-readable time
+| FILTER out groups that match environment-specific allowlists or known benign patterns (if available)
+| OUTPUT src_ip, dest_ip, http_method, http_user_agent, uri_path, url, bytes_in, bytes_out, http_request_body, firstTime, lastTime, firstTime_readable, lastTime_readable, count"
+Windows SharePoint ToolPane Endpoint Exploitation Attempt,
+Citrix ADC Exploitation CVE-2023-3519,
+WordPress Bricks Builder plugin RCE,"SEARCH web server access logs within the specified time range
+| PARSE fields: event_time, client_ip, server_ip_or_host, http_method, http_status, url, uri_path, user_agent, log_source, log_source_type
+| DERIVE uri_path from url if uri_path is not already present
+| FILTER http_method equals ""POST""
+| FILTER http_status equals 200
+| FILTER uri_path equals ""/wp-json/bricks/v1/render_element"" OR url ends with ""/wp-json/bricks/v1/render_element""
+| APPLY optional environment-specific allowlist exclusions (e.g., known scanner IPs, internal test sources)
+| GROUP BY client_ip, server_ip_or_host, user_agent, url, uri_path, http_status, http_method, log_source_type, log_source
+| COMPUTE count of events, earliest event_time as first_seen, latest event_time as last_seen
+| FORMAT first_seen and last_seen as human-readable timestamps
+| OUTPUT count, first_seen, last_seen, client_ip, server_ip_or_host, user_agent, url, uri_path, http_status, http_method, log_source_type, log_source"
+Tomcat Session File Upload Attempt,"SEARCH web server access logs (e.g., Nginx) over the analysis window selecting fields: timestamp, client_ip, server, http_method, uri_path, http_status, http_user_agent | FILTER records where http_method equals ""PUT"" | FILTER records where uri_path matches the pattern ""/[^/]+\.session$"" (final path segment ends with "".session"") | FILTER records where http_status is in {201, 409} | GROUP records by client_ip, server, http_user_agent, uri_path, http_status | COMPUTE count_of_events, first_seen = earliest timestamp, last_seen = latest timestamp per group | PARSE filename from uri_path as the final path segment without the "".session"" suffix | DERIVE severity = ""High"" | FORMAT first_seen and last_seen as human-readable timestamps | APPLY environment-specific exclusion or allowlist filters if defined | OUTPUT client_ip, server, http_user_agent, uri_path, filename, http_status, count_of_events, first_seen, last_seen, severity"
+Cisco Secure Firewall - Connection to File Sharing Domain,
+Detect Remote Access Software Usage Traffic,"SEARCH network traffic events from Palo Alto Networks traffic logs over the desired time range
+| PARSE fields: timestamp, action, app (application identifier), bytes (total), bytes_in, bytes_out, dest (destination hostname), dest_ip, dest_port, dvc (logging device), protocol, protocol_version, src (source hostname), src_ip, src_port, transport, user, vendor_product
+| GROUP records BY action, app, bytes, bytes_in, bytes_out, dest, dest_ip, dest_port, dvc, protocol, protocol_version, src, src_ip, src_port, transport, user, vendor_product
+| COMPUTE for each group: event_count = count of records, first_seen_time = minimum timestamp, last_seen_time = maximum timestamp
+| JOIN each grouped record WITH reference dataset ""remote_access_software"" ON app equals remote_appid TO ENRICH fields: isutility (boolean flag indicating known remote access software), signature (description), desc (reference/comment), category
+| FILTER records WHERE isutility equals true
+| APPLY organization-defined exception rules to remove known benign or approved remote access software usage (e.g., sanctioned tools, approved admin accounts, trusted endpoints)
+| APPLY any additional"
+Detect Zerologon via Zeek,"SEARCH DCE/RPC telemetry events containing RPC operations with fields [timestamp, source_ip, destination_ip, operation] | FILTER operation IN [""NetrServerPasswordSet2"",""NetrServerReqChallenge"",""NetrServerAuthenticate3""] | DERIVE time_window_start = floor(timestamp to 5-minute boundary) | GROUP BY time_window_start, source_ip, destination_ip | AGGREGATE op_list = list of operation, opscount = distinct_count(operation), challenge = count_where(operation == ""NetrServerReqChallenge""), authcount = count_where(operation == ""NetrServerAuthenticate3""), passcount = count_where(operation == ""NetrServerPasswordSet2""), totalcount = count_all | FILTER opscount == 3 AND authcount > 4 AND passcount > 0 | APPLY environment-specific allowlist or suppression rules to exclude known legitimate sources or test activity | OUTPUT fields [time_window_start, source_ip, destination_ip, op_list, opscount, challenge, authcount, passcount, totalcount]"
+Detect Remote Access Software Usage DNS,"SEARCH DNS resolution telemetry from endpoints and/or DNS servers
+| PARSE fields: event_time, client_identifier, queried_domain, dns_answers, reply_code, telemetry_source
+| DERIVE one record per individual dns_answer value if multiple answers are present
+| GROUP BY queried_domain, dns_answer, reply_code, client_identifier, telemetry_source
+| COMPUTE total_events = count, first_seen_time = earliest(event_time), last_seen_time = latest(event_time)
+| ENRICH USING reference list ""Remote Access Software Domains"" ON queried_domain -> remote_domain TO ADD fields: is_utility_flag, signature, description, category
+| FILTER where is_utility_flag == true
+| APPLY exception rules to exclude approved/known-benign sources, users, or domains related to remote access"
+Internal Vertical Port Scan,"SEARCH network traffic connection/flow logs containing at minimum: event_time, src_ip, dest_ip, dest_port, transport, action, src_category, dest_zone, src_zone
+| FILTER records where src_ip is within private address ranges: 10.0.0.0/8 OR 172.16.0.0/12 OR 192.168.0.0/16
+| DERIVE hour_bucket = floor(event_time to 1-hour)
+| GROUP records BY src_ip, dest_ip, transport, hour_bucket
+| COMPUTE for each group:
+  - earliest_time = minimum(event_time)
+  - action_set = set of action
+  - src_category_set = set of src_category
+  - dest_zone_set = set of dest_zone
+  - src_zone_set = set of src_zone
+  - totalDestTcpPortCount = count of distinct dest_port where transport == ""tcp""
+  - privilegedDestTcpPortCount = count of distinct dest_port where transport == ""tcp"" AND dest_port < 1024
+  - totalDestUdpPortCount = count of distinct dest_port where transport == ""udp""
+  - privilegedDestUdpPortCount = count of distinct dest_port where transport == ""udp"" AND dest_port < 1024
+| DERIVE totalDestPortCount = totalDestTcpPortCount + totalDestUdpPortCount
+| DERIVE privilegedDestPortCount = privilegedDestTcpPortCount + privilegedDestUdpPortCount
+| FILTER groups where totalDestPort"
+DNS Query Length Outliers - MLTK,"SEARCH DNS resolution events within the chosen time range containing fields: query, record_type, source_address, destination_address, timestamp
+| FILTER events where record_type is present and not empty
+| GROUP events BY query, record_type
+| AGGREGATE per group: count = number of events; start_time = earliest timestamp; end_time = latest timestamp; src = unique list of source_address; dest = unique list of destination_address
+| COMPUTE query_length = length(query)
+| APPLY outlier_detection_model on feature query_length with threshold 0.01 to produce isOutlier flag (1 if outlier, else 0)
+| FILTER groups where isOutlier == 1
+| SORT by query_length descending
+| FORMAT start_time and end_time as human-readable timestamps
+| SELECT start_time, end_time, query, record_type, count, src, dest, query_length
+| APPLY optional allowlist/suppression rules to remove known benign queries
+| OUTPUT results"
+TOR Traffic,"SEARCH network traffic/connection events from next-generation firewall logs (e.g., Palo Alto Network Traffic, Cisco Secure Firewall Threat Defense Connection Event) within the desired time window, selecting fields: timestamp, app, action, bytes, bytes_in, bytes_out, dest, dest_ip, dest_port, dvc, protocol, protocol_version, src, src_ip, src_port, transport, user, vendor_product, rule
+| FILTER app equals ""tor"" (string match, case-insensitive) AND action is in {""allowed"", ""allow""}
+| GROUP BY action, app, bytes, bytes_in, bytes_out, dest, dest_ip, dest_port, dvc, protocol, protocol_version, src, src_ip, src_port, transport, user, vendor_product, rule
+| AGGREGATE count as event_count, minimum(timestamp) as firstTime, maximum(timestamp) as lastTime per group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| OUTPUT one record per group including: action, app, bytes, bytes_in, bytes_out, dest, dest_ip, dest_port, dvc, protocol, protocol_version, src, src_ip, src_port, transport, user, vendor_product, rule, event_count, firstTime, lastTime"
+Wermgr Process Connecting To IP Check Web Services,
+Detect DNS Query to Decommissioned S3 Bucket,"SEARCH DNS resolution telemetry (e.g., Sysmon Event ID 22) within the desired time range
+| FILTER records where the DNS message type indicates a client query (not a response)
+| PARSE fields needed for analysis: event_time, queried_domain, answers (if any), answer_count (if present), reply_code (status), source_identifier (e.g., client IP or host), and product/vendor identifier
+| GROUP records by queried_domain, answers, answer_count, reply_code, source_identifier, product"
+Suspicious Process DNS Query Known Abuse Web Services,
+Protocols passing authentication in cleartext,
+Detect SNICat SNI Exfiltration,
+SMB Traffic Spike,
+Cisco Secure Firewall - Lumma Stealer Outbound Connection Attempt,"SEARCH Cisco Secure Firewall Threat Defense Intrusion Event logs
+| FILTER EventType equals IntrusionEvent
+| FILTER signature_id is in [64797, 64798, 64799, 64800, 64801, 64167, 64168, 64169, 62709]
+| FILL missing values in all fields with a default placeholder to prevent nulls during grouping
+| GROUP BY src_ip, dest_ip, dest_port, transport, signature_id, signature, class_desc, MitreAttackGroups, rule, InlineResult, InlineResultReason, app
+| COMPUTE firstTime = earliest event time within each group, lastTime = latest event time within each group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY optional tuning or allowlist filters to exclude known benign or expected events
+| OUTPUT firstTime, lastTime, src_ip, dest_ip, dest_port, transport, signature_id, signature, class_desc, MitreAttackGroups, rule, InlineResult, InlineResultReason, app"
+Internal Horizontal Port Scan NMAP Top 20,
+Detect Port Security Violation,"SEARCH network device syslog events that include fields: facility, mnemonic, disable_cause, src_int_prefix_long, src_int_suffix, src_mac, src_vlan, action, host, event_time |
+FILTER events where (facility = ""PM"" AND mnemonic = ""ERR_DISABLE"" AND disable_cause = ""psecure-violation"") OR (facility = ""PORT_SECURITY"" AND mnemonic IN [""PSECURE_VIOLATION"", ""PSECURE_VIOLATION_VLAN""]) |
+DERIVE src_interface = concatenate(src_int_prefix_long, src_int_suffix) with nulls treated as empty strings |
+GROUP BY host, src_interface COMPUTE firstTime = minimum(event_time), lastTime = maximum(event_time), disable_cause = unique_list(disable_cause), src_mac = unique_list(src_mac), src_vlan = unique_list(src_vlan), action = unique_list(action), count = event_count() |
+FORMAT firstTime, lastTime as human-readable timestamps |
+APPLY environment-specific suppressions or allowlists for known benign hosts or interfaces (optional) |
+OUTPUT host, src_interface, firstTime, lastTime, disable_cause, src_mac, src_vlan, action, count"
+Internal Horizontal Port Scan,
+Rundll32 DNSQuery,
+Detect DNS Data Exfiltration using pretrained model in DSDL,

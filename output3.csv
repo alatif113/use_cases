@@ -1,0 +1,714 @@
+name,response
+Cisco Secure Firewall - Lumma Stealer Activity,
+SSL Certificates with Punycode,"SEARCH SSL/TLS certificate telemetry selecting fields: ssl_issuer_email_domain, ssl_issuer, ssl_subject_email, dest, src, sourcetype, ssl_subject_email_domain, event_time
+| GROUP BY ssl_issuer_email_domain, ssl_issuer, ssl_subject_email, dest, src, sourcetype, ssl_subject_email_domain AGGREGATE count = COUNT(), first"
+Large Volume of DNS ANY Queries,"SEARCH DNS query events within the selected time window
+| PARSE fields: message_type, record_type, destination
+| FILTER message_type == ""QUERY""
+| FILTER record_type == ""ANY""
+| GROUP records BY destination
+| COMPUTE count = number of records per destination
+| FILTER groups WHERE count > 200
+| APPLY optional post-filter to remove known benign destinations if defined
+| OUTPUT destination, count"
+Hosts receiving high volume of network traffic from email server,
+Cisco Secure Firewall - Repeated Malware Downloads,"SEARCH records from data source ""Cisco Secure Firewall Threat Defense File Event""
+| FILTER where EventType equals ""FileEvent"" AND SHA_Disposition equals ""Malware"" AND FileDirection equals ""Download""
+| ENRICH each record by joining to a reference mapping keyed by FileType to add Description
+| BUCKET records into 5-minute windows based on event timestamp
+| GROUP records BY src_ip, FileDirection, FileType, Description, and 5-minute time window
+| COMPUTE for each group: count of events, firstTime as minimum event timestamp, lastTime as maximum event timestamp
+| AGGREGATE for each group the distinct values of: uri, ClientApplication, app, file_hash, SHA_Disposition, file_name, ThreatName, dest, dest_port
+| FILTER groups where count is greater than or equal to 10
+| FORMAT firstTime and lastTime as human-readable timestamps
+| OUTPUT fields: firstTime, lastTime, src_ip, dest, dest_port, FileDirection, FileType, Description, uri, file_name, file_hash, app, ClientApplication, ThreatName, SHA_Disposition"
+Windows Remote Desktop Network Bruteforce Attempt,
+Detect ARP Poisoning,"SEARCH network device logs from Cisco switches/routers over the time range of interest
+| PARSE fields: facility, mnemonic, disable_cause, src_int_prefix_long, src_int_suffix, host, event_timestamp
+| FILTER facility == ""PM"" AND mnemonic == ""ERR_DISABLE"" AND disable_cause == ""arp-inspection""
+| DERIVE src_interface = CONCAT(src_int_prefix_long, src_int_suffix)
+| GROUP BY host, src_interface
+| COMPUTE firstTime = EARLIEST(event_timestamp), lastTime = LATEST(event_timestamp), count = COUNT(events)
+| DERIVE firstTime_readable = CONVERT_TIMESTAMP(firstTime), lastTime_readable = CONVERT_TIMESTAMP(lastTime)
+| OUTPUT host, src_interface, count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+3CX Supply Chain Attack Network Indicators,
+Cisco Secure Firewall - Potential Data Exfiltration,"SEARCH records from Cisco Secure Firewall Threat Defense Connection Event logs within the requested time range
+| FILTER events where event_type equals ""ConnectionEvent""
+| FILTER flows representing inside-to-outside egress traffic using available indicators, for example:
+  - source_zone/category/interface indicates internal AND destination_zone/category/interface indicates external
+  OR
+  - source_ip is within private address ranges (RFC1918) AND destination_ip is not private or reserved
+  OR
+  - direction field equals egress or inside-to-outside (if such a field exists)
+| DERIVE total_bytes = coalesce(InitiatorBytes, 0) + coalesce(ResponderBytes, 0)
+| DERIVE total_mb = round(total_bytes / (1024 * 1024), 2)
+| FILTER records where total_mb >= 100
+| DERIVE Exfiltrated = concatenate(total_mb, "" MB"")
+| GROUP by src_ip, dest, transport, action, Exfiltrated with:
+  - firstTime = minimum(event_time)
+  - lastTime = maximum(event_time)
+  - url_list = distinct list of url
+  - rule_list = distinct list of rule
+  - dest_port_list = distinct list of dest_port
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY optional exclusions to remove known benign sources, destinations, rules, or URLs (allowlist)
+| OUTPUT src_ip, dest, transport, action, Exfiltrated, firstTime, lastTime, url_list, rule_list, dest_port_list"
+Cisco Secure Firewall - High Volume of Intrusion Events Per Host,"SEARCH Cisco Secure Firewall Threat Defense Intrusion Event logs
+| FILTER records where EventType equals ""IntrusionEvent""
+| DERIVE time_window_start as the floor of _time to the nearest 30-minute boundary
+| GROUP records by time_window_start, src_ip, class_desc, MitreAttackGroups, InlineResult, InlineResultReason, rule, transport, app
+| COMPUTE for each group: 
+  - TotalEvents = COUNT()
+  - signature_id = UNIQUE_LIST(signature_id)
+  - signature = UNIQUE_LIST(signature)
+  - dest = UNIQUE_LIST(dest)
+  - dest_port = UNIQUE_LIST(dest_port)
+  - firstTime = MIN(_time)
+  - lastTime = MAX(_time)
+| FILTER groups where TotalEvents is greater than or equal to 15
+| DERIVE firstTimeReadable = CONVERT_TIME_TO_READABLE(firstTime)
+| DERIVE lastTimeReadable = CONVERT_TIME_TO_READABLE(lastTime)
+| APPLY optional suppression to exclude known benign entities or conditions (for example, specific src_ip, signature_id, rule, or app)
+| OUTPUT time_window_start, src_ip, TotalEvents, signature_id, signature, dest, dest_port, class_desc, MitreAttackGroups, InlineResult, InlineResultReason, rule, transport, app, firstTime, lastTime, firstTimeReadable, lastTimeReadable"
+Cisco Secure Firewall - Rare Snort Rule Triggered,"SEARCH Cisco Secure Firewall Threat Defense Intrusion Event data for the last 7 days |
+FILTER events where EventType equals ""IntrusionEvent"" |
+GROUP records by signature_id, class_desc, MitreAttackGroups, InlineResult, InlineResultReason |
+AGGREGATE per group:
+- TriggerCount = distinct count of event timestamps
+- firstTime = minimum event timestamp
+- lastTime = maximum event timestamp
+- signature = set of unique signature values
+- src_ip = set of unique source IP values
+- dest = set of unique destination values
+- dest_port = set of unique destination port values
+- transport = set of unique transport protocol values
+- app = set of unique application values
+- rule = set of unique rule values |
+FILTER groups where TriggerCount equals 1 |
+FORMAT firstTime and lastTime as human-readable datetimes |
+APPLY optional allowlist/suppression filters specific to known benign signatures or contexts |
+OUTPUT the grouped identifiers, aggregated fields, TriggerCount, firstTime, and lastTime"
+SMB Traffic Spike - MLTK,"SEARCH network traffic connection events containing fields for event_time, source_ip, destination_ip, destination_port, and application |
+FILTER events where destination_port equals 139 OR destination_port equals 445 OR application equals ""smb"" |
+GROUP events BY 1-hour time bucket of event_time and source_ip |
+COMPUTE for each group: count = number of events, dest = set of unique destination_ip values, port = set of unique destination_port values |
+DERIVE HourOfDay = hour(from time bucket start), DayOfWeek = day_of_week(from time bucket start) |
+APPLY anomaly detection model on field count using a probability density function approach with threshold 0.001, OUTPUT isOutlier indicator for each group |
+FILTER groups where isOutlier > 0 |
+SORT groups by count in descending order |
+SELECT fields: time = time bucket start, src = source_ip, dest, port, count |
+OUTPUT results"
+Prohibited Network Traffic Allowed,"SEARCH network connection/flow logs from Cisco Secure Firewall Threat Defense (and similar network traffic sources) within the desired time range
+| FILTER records where action equals ""allowed"" OR ""allow""
+| GROUP records BY src_ip, dest_ip, dest_port, action, dvc, src_port, vendor_product; AGGREGATE count as event_count, min(timestamp) as firstTime, max(timestamp) as lastTime
+| LOOKUP prohibited_ports_policy on dest_port to ENRICH WITH app, is_prohibited, note, transport
+| FILTER records where is_prohibited equals true
+| DERIVE firstTime_readable = human-readable(firstTime), lastTime_readable = human-readable(lastTime)
+| OUTPUT src_ip, src_port, dest_ip, dest_port, action, dvc, vendor_product, app, transport, note, is_prohibited, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Remote Desktop Network Traffic,"SEARCH network connection telemetry (e.g., flow/session logs) with fields: timestamp, src, src_ip, src_port, dest, dest_ip, dest_port, action, device (dvc), vendor_product, src_category, dest_category
+| FILTER records where dest_port equals 3389
+| FILTER records where action equals ""allowed""
+| FILTER records where dest_category is not ""common_rdp_destination"" (exclude known/common RDP server destinations)
+| FILTER records where src_category is not ""common_rdp_source"" (exclude known/common RDP client sources)
+| GROUP records BY src, src_ip, src_port, dest, dest_ip, dest_port, device, vendor_product
+| COMPUTE for each group: event_count = number of records, firstTime = minimum timestamp, lastTime = maximum timestamp
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY environment-specific allowlist/suppression rules to exclude additional known-benign src/dest pairs or devices (optional)
+| OUTPUT src, src_ip, src_port, dest, dest_ip, dest_port, device, vendor_product, event_count, firstTime, lastTime"
+DNS Query Length With High Standard Deviation,
+Cisco Secure Firewall - Snort Rule Triggered Across Multiple Hosts,"SEARCH Cisco Secure Firewall Threat Defense Intrusion Event logs | FILTER events where event_type equals ""IntrusionEvent"" | DERIVE time_window_hour by rounding each event timestamp down to the nearest 1-hour boundary | GROUP records BY time_window_hour, signature_id, signature, class_desc, MitreAttackGroups, InlineResult, InlineResultReason AGGREGATE unique_src_ips = count_distinct(src_ip), src_ip_list = list_unique(src_ip), dest_list = list_unique(dest), dest_port_list = list_unique(dest_port), rule_list = list_unique(rule), transport_list = list_unique(transport), app_list = list_unique(app), firstTime = min(timestamp), lastTime = max(timestamp) | FILTER groups where unique_src_ips is greater than or equal to 10 | DERIVE firstTime_readable = human_readable(firstTime), lastTime_readable = human_readable(lastTime) | OUTPUT time_window_hour, signature_id, signature, class_desc, MitreAttackGroups, InlineResult, InlineResultReason, unique_src_ips, src_ip_list, dest_list, dest_port_list, rule_list, transport_list, app_list, firstTime, firstTime_readable, lastTime, lastTime_readable"
+Cisco Secure Firewall - High EVE Threat Confidence,"SEARCH data from ""Cisco Secure Firewall Threat Defense Connection Event"" logs
+| PARSE each event to extract fields: EventType, EVE_ThreatConfidencePct, _time, rule, url, EVE_Process, src_ip, dest, dest_port, transport, action
+| FILTER events where EventType equals ""ConnectionEvent""
+| FILTER events where EVE_ThreatConfidencePct is greater than or equal to 80
+| AGGREGATE events by EVE_Process, EVE_ThreatConfidencePct, src_ip, dest, dest_port, transport, action; compute:
+  - event_count = total number of events in the group
+  - firstTime = earliest _time in the group
+  - lastTime = latest _time in the group
+  - rules = distinct set of rule values in the group
+  - urls = distinct set of url values in the group
+| DERIVE firstTime_readable and lastTime_readable as human-readable timestamps from firstTime and lastTime
+| APPLY optional environment-specific suppression filters (e.g., allowlisted hosts, trusted destinations, benign rules/URLs) if defined
+| OUTPUT grouped keys, EVE_ThreatConfidencePct, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable, rules, urls"
+Detect Unauthorized Assets by MAC address,
+Detect suspicious DNS TXT records using pretrained model in DSDL,"SEARCH DNS resolution logs within the desired time range
+| FILTER records where message_type equals ""response"" AND record_type equals ""TXT""
+| GROUP records BY src, dest, answer, record_type; COMPUTE firstTime = earliest event_time, lastTime = latest event_time
+| DERIVE text = answer
+| APPLY pretrained deep learning model for DNS TXT classification on field text; OUTPUT field predicted_is_unknown as a numeric score
+| DERIVE is_suspicious_score = predicted_is_unknown
+| FILTER records where is_suspicious_score > 0.5
+| FORMAT firstTime and lastTime as human-readable timestamps
+| OUTPUT columns src, dest, text, record_type, firstTime, lastTime, is_suspicious_score"
+Cisco Secure Firewall - Lumma Stealer Download Attempt,"SEARCH data from Cisco Secure Firewall Threat Defense Intrusion Event logs
+| FILTER events where EventType equals ""IntrusionEvent""
+| FILTER events where signature_id is in {62710, 62711, 62712, 62713, 62714, 62715, 62716, 62717, 64810, 64811}
+| FILL_NULLS for fields [src_ip, dest_ip, dest_port, transport, signature_id, signature, class_desc, MitreAttackGroups, rule, InlineResult, InlineResultReason, app]
+| AGGREGATE events BY [src_ip, dest_ip, dest_port, transport, signature_id, signature, class_desc, MitreAttackGroups, rule, InlineResult, InlineResultReason, app] COMPUTE earliest event_time as firstTime, latest event_time as lastTime
+| DERIVE human_readable_firstTime from firstTime and human_readable_lastTime from lastTime
+| APPLY environment-specific exclusion filters to remove known benign sources, destinations, signatures, applications, or results
+| OUTPUT [firstTime, lastTime, human_readable_firstTime, human_readable_lastTime, src_ip, dest_ip, dest_port, transport, signature_id, signature, class_desc, MitreAttackGroups, rule, InlineResult, InlineResultReason, app]"
+Internal Vulnerability Scan,
+Detect Outbound SMB Traffic,
+Detect Outbound LDAP Traffic,
+Zeek x509 Certificate with Punycode,"SEARCH Zeek x509 certificate log events
+| PARSE from each value in san.email the substring that appears after ""@"" and begins with ""xn--"" and collect as domain_detected (multiple per event allowed)
+| PARSE from each value in san.other_fields the substring that appears after ""@"" and begins with ""xn--"" and collect as domain_detected (append to existing collection)
+| FILTER keep only events where domain_detected is present and not empty
+| GROUP events by basic_constraints.ca, source, host
+| AGGREGATE the unique set of domain_detected per group as detected_punycode_domains
+| OUTPUT fields basic_constraints.ca, source, host, detected_punycode_domains"
+Cisco Secure Firewall - Possibly Compromised Host,"SEARCH data from Cisco Secure Firewall Threat Defense Intrusion Event logs
+| PARSE records to extract fields: EventType, Impact, event_time, src_ip, dest, dest_port, transport, app, impact_desc, class_desc, MitreAttackGroups, InlineResult, InlineResultReason, signature_id, signature, rule
+| FILTER records where EventType equals ""IntrusionEvent""
+| FILTER records where Impact is in {1, 2}
+| GROUP records BY src_ip, dest, dest_port, transport, Impact, app, impact_desc, class_desc, MitreAttackGroups, InlineResult, InlineResultReason
+| COMPUTE for each group: TotalDetections = count(records); signature_id = distinct list of signature_id; signature = distinct list of signature; rule = distinct list of rule; firstTime = minimum(event_time); lastTime = maximum(event_time)
+| DERIVE human_readable_firstTime from firstTime using timestamp-to-string conversion
+| DERIVE human_readable_lastTime from lastTime using timestamp-to-string conversion
+| APPLY environment-specific suppression or allowlist filters if available
+| OUTPUT fields: src_ip, dest, dest_port, transport, Impact, app, impact_desc, class_desc, MitreAttackGroups, InlineResult, InlineResultReason, TotalDetections, signature_id, signature, rule, firstTime, lastTime, human_readable_firstTime, human_readable_lastTime"
+Cisco Secure Firewall - Veeam CVE-2023-27532 Exploitation Activity,"SEARCH Cisco Secure Firewall Threat Defense IntrusionEvent logs over the desired time range
+| FILTER records where EventType equals ""IntrusionEvent"" AND signature_id is either 61514 or 64795
+| DERIVE time_bucket as event timestamp rounded down to 5-minute intervals
+| FILL missing field values with null to prevent null-related aggregation issues
+| GROUP records by dest_ip
+| COMPUTE for each dest_ip:
+  - unique_signature_count = count of distinct signature_id
+  - signature_id_list = list of observed signature_id values
+  - signature_list = list of observed signature (rule name) values
+  - class_desc_list = list of observed class_desc values
+  - mitre_attack_groups_list = list of observed MitreAttackGroups values
+  - inline_result_list = list of observed InlineResult values
+  - inline_result_reason_list = list of observed InlineResultReason values
+  - src_ip_list = list of observed src_ip values
+  - dest_port_list = list of observed dest_port values
+  - rule_list = list of observed rule values
+  - transport_list = list of observed transport values
+  - app_list = list of observed app values
+  - firstTime = minimum event timestamp
+  - lastTime = maximum event timestamp
+| FILTER groups where unique_signature_count equals 2
+| FORMAT firstTime and lastTime as human-readable timestamps
+| OUTPUT dest_ip, unique_signature_count, signature_id_list, signature_list, class_desc_list, mitre_attack_groups_list, inline_result_list, inline_result_reason_list, src_ip_list, dest_port_list, rule_list, transport_list, app_list, firstTime, lastTime"
+Detect Windows DNS SIGRed via Zeek,
+Cisco Secure Firewall - Communication Over Suspicious Ports,"SEARCH Cisco Secure Firewall Threat Defense Connection Event logs over the desired time range
+| FILTER records where EventType equals ""ConnectionEvent""
+| FILTER records where dest_port is in [888, 999, 2200, 2222, 4000, 4444, 6789, 8531, 50501, 51820]
+| FILL missing url with ""unknown""
+| GROUP records by src_ip, dest, dest_port, transport, action
+| COMPUTE count of records per group
+| COMPUTE earliest event timestamp in group as firstTime
+| COMPUTE latest event timestamp in group as lastTime
+| COMPUTE unique list of src_port values in group as src_port
+| COMPUTE unique list of url values in group as url
+| COMPUTE unique list of rule values in group as rule
+| DERIVE firstTimeReadable by formatting firstTime to a human-readable timestamp
+| DERIVE lastTimeReadable by formatting lastTime to a human-readable timestamp
+| APPLY optional environment-specific suppression or allow-list filters to exclude known benign combinations
+| OUTPUT firstTime, lastTime, firstTimeReadable, lastTimeReadable, src_ip, dest, dest_port, transport, action, src_port, url, rule, count"
+Detect hosts connecting to dynamic domain providers,
+Cisco Secure Firewall - High Priority Intrusion Classification,"SEARCH records from data source ""Cisco Secure Firewall Threat Defense Intrusion Event""
+| FILTER where EventType equals ""IntrusionEvent""
+| FILTER where class_desc is one of:
+  - ""A Network Trojan was Detected""
+  - ""Successful Administrator Privilege Gain""
+  - ""Successful User Privilege Gain""
+  - ""Attempt to Login By a Default Username and Password""
+  - ""Known malware command and control traffic""
+  - ""Known malicious file or file based exploit""
+  - ""Known client side exploit attempt""
+  - ""Large Scale Information Leak""
+| FILLNULL replace missing values in fields [signature_id, MitreAttackGroups, InlineResult, InlineResultReason, dest_port, rule, transport, app, src_ip, dest_ip, signature, class_desc] with an empty value
+| GROUP records BY src_ip, dest_ip, signature, class_desc
+| AGGREGATE per group:
+  - COUNT events as count
+  - MIN timestamp as firstTime
+  - MAX timestamp as lastTime
+  - DISTINCT_LIST of signature_id as signature_id
+  - DISTINCT_LIST of MitreAttackGroups as MitreAttackGroups
+  - DISTINCT_LIST of InlineResult as InlineResult
+  - DISTINCT_LIST of InlineResultReason as InlineResultReason
+  - DISTINCT_LIST of dest_port as dest_port
+  - DISTINCT_LIST of rule as rule
+  - DISTINCT_LIST of transport as transport
+  - DISTINCT_LIST of app as app
+| FORMAT firstTime and lastTime as human-readable timestamps
+| OUTPUT fields [src_ip, dest_ip, signature, class_desc, count, firstTime, lastTime, signature_id, MitreAttackGroups, InlineResult, InlineResultReason, dest_port, rule, transport, app]"
+Cisco Secure Firewall - Binary File Type Download,"SEARCH events from Cisco Secure Firewall Threat Defense File Event
+| FILTER EventType equals ""FileEvent""
+| FILTER FileDirection equals ""Download""
+| FILTER FileType is one of [""ISHIELD_MSI"",""BINHEX"",""BINARY_DATA"",""ELF"",""MACHO"",""JARPACK"",""TORRENT"",""AUTORUN"",""EICAR"",""LNK"",""SCR"",""UNIX_SCRIPT""]
+| APPLY LOOKUP using reference dataset ""cisco_secure_firewall_filetype_lookup"" to map Name to Description, matching events where FileType equals Name, and append Description to each matching event
+| GROUP events BY FileDirection, FileType, src_ip, dest, app, file_name, ThreatName, dest_port, Description
+| COMPUTE within each group: total event count as count; earliest event timestamp as firstTime; latest event timestamp as lastTime; distinct list of uri as uri; distinct list of ClientApplication as ClientApplication; distinct list of file_hash as file_hash; distinct list of SHA_Disposition as SHA_Disposition
+| DERIVE firstTime and lastTime into human-readable timestamp strings
+| FORMAT results to include only: firstTime, lastTime, src_ip, dest, dest_port, FileDirection, FileType, Description, uri, file_name, file_hash, app, ClientApplication, SHA_Disposition, ThreatName
+| APPLY optional environment-specific filters to reduce noise or exclude known benign activity
+| OUTPUT results"
+Cisco Secure Firewall - Blacklisted SSL Certificate Fingerprint,"SEARCH Cisco Secure Firewall Threat Defense Connection Event records
+| FILTER records where EventType exists AND SSL_CertFingerprint exists
+| APPLY LOOKUP using sslbl_ssl_certificate_blacklist on key mapping SSL_CertFingerprint -> SHA1 to append fields Listingdate, Listingreason
+| FILTER records where Listingreason exists (indicating a blacklisted SSL certificate fingerprint match)
+| GROUP records BY SSL_CertFingerprint, src_ip, transport, action COMPUTE
+  - firstTime = MIN(event timestamp)
+  - lastTime = MAX(event timestamp)
+  - dest = UNIQUE_VALUES(dest)
+  - dest_port = UNIQUE_VALUES(dest_port)
+  - rule = UNIQUE"
+Windows Multi hop Proxy TOR Website Query,"SEARCH endpoint DNS query events with event identifier 22
+| FILTER records where QueryName equals ""www.theonionrouter.com"" OR QueryName matches any subdomain of ""torproject.org""
+| GROUP BY answer, answer_count, dvc, process_exec, process_guid, process_name, query, query_count, reply_code_id, signature, signature_id, src, user_id, vendor_product, QueryName, QueryResults, QueryStatus
+| DERIVE total_events = count(), firstTime = earliest(event_time), lastTime = latest(event_time)
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY allowlist to exclude known benign devices, users, processes, or domains if available
+| OUTPUT the grouped fields along with total_events, firstTime, and lastTime"
+Cisco Secure Firewall - Wget or Curl Download,"SEARCH events from Cisco Secure Firewall Threat Defense Connection Event logs
+| FILTER where EventType equals ""ConnectionEvent""
+| FILTER where action is one of [""Trust"", ""Allow"", ""allowed""]
+| FILTER where (EVE_Process contains ""curl"" OR EVE_Process contains ""wget"" OR ClientApplication equals ""cURL"" OR ClientApplication equals ""Wget"")
+| GROUP records BY src_ip, dest, transport, EVE_Process, ClientApplication, action
+| AGGREGATE within each group: count events as count; compute minimum event timestamp as firstTime; compute maximum event timestamp as lastTime; collect distinct values of rule as rule; collect distinct values of url as url; collect distinct values of dest_port as dest_port; collect distinct values of ClientApplicationVersion as ClientApplicationVersion; collect distinct values of src_port as src_port
+| SELECT src_ip, src_port, dest, dest_port, transport, url, EVE_Process, ClientApplication, ClientApplicationVersion, rule, firstTime, lastTime
+| DERIVE human-readable timestamps from firstTime and lastTime as firstTime_readable and lastTime_readable
+| OUTPUT the selected fields and derived timestamps"
+F5 BIG-IP iControl REST Vulnerability CVE-2022-1388,"SEARCH web/HTTP request logs over the desired time range from network/security devices that record URL, method, user agent, source, and destination | FILTER events where http_method equals ""POST"" | FILTER events where url contains the path segment ""/mgmt/tm/util/bash"" | DERIVE url_length as the character length of url if not already present | GROUP events BY http_user_agent, http_method, url, url_length, src_ip, dest_ip | COMPUTE event_count as the number of events per group, first_seen as the minimum event timestamp per group, last_seen as the maximum event timestamp per group | FORMAT first_seen and last_seen as human-readable timestamps | APPLY environment-specific suppression rules to exclude known benign sources or patterns (optional) | SORT groups by event_count descending (optional) | OUTPUT src_ip, dest_ip, http_method, url, url_length, http_user_agent, event_count, first_seen, last_seen"
+Windows Gather Victim Network Info Through Ip Check Web Services,"SEARCH records from Windows endpoint DNS query telemetry (e.g., Sysmon DNS events) where event_code equals 22
+| FILTER records where field QueryName matches any of the following domain patterns: ""*wtfismyip.com"", ""*checkip.*"", ""*ipecho.net"", ""*ipinfo.io"", ""*api.ipify.org"", ""*icanhazip.com"", ""*ip.anysrc.com"
+Windows AD Rogue Domain Controller Network Activity,"SEARCH Zeek RPC telemetry for events within the desired time range
+| FILTER events where operation equals ""DrsReplicaAdd"" OR operation equals ""DRSGetNCChanges""
+| FILTER events where (dest_category is not ""Domain Controller"") OR (src_category is not ""Domain Controller"")
+| DERIVE src_category = ""Unknown"" if src_category is null or empty; dest_category = ""Unknown"" if dest_category is null or empty
+| SELECT time, endpoint, operation, src, src_category, dest, dest_category
+| APPLY environment-specific allowlists or suppression rules for known benign sources, destinations, or operations
+| OUTPUT the remaining events in the selected field order"
+Detect Traffic Mirroring,"SEARCH Cisco network device logs
+| PARSE fields: timestamp, host, facility, mnemonic, command
+| FILTER where (
+    (facility == ""MIRROR"" AND mnemonic == ""ETH_SPAN_SESSION_UP"")
+    OR (facility == ""SPAN"" AND mnemonic == ""SESSION_UP"")
+    OR (facility == ""SPAN"" AND mnemonic == ""PKTCAP_START"")
+    OR (mnemonic == ""CFGLOG_LOGGEDCMD"" AND command STARTS_WITH ""monitor session"")
+  )
+| GROUP BY host, facility, mnemonic
+| COMPUTE firstTime = MIN(timestamp), lastTime = MAX(timestamp), count = COUNT()
+| FORMAT firstTime, lastTime as human-readable timestamps
+| APPLY environment-specific allowlist/exclusion rules (e.g., known benign hosts or maintenance activities)
+| OUTPUT host, facility, mnemonic, firstTime, lastTime, count"
+Detect Rogue DHCP Server,"SEARCH network device logs that include DHCP snooping events |
+PARSE fields: event_time, host, facility, mnemonic, message_type, src_mac |
+FILTER facility equals ""DHCP_SNOOPING"" |
+FILTER mnemonic equals ""DHCP_SNOOPING_UNTRUSTED_PORT"" |
+GROUP BY host |
+COMPUTE firstTime = minimum(event_time), lastTime = maximum(event_time), event_count = count(), message_types = distinct values of message_type, src_macs = distinct values of src_mac |
+DERIVE firstTime_readable = human-readable timestamp from firstTime, lastTime_readable = human-readable timestamp from lastTime |
+APPLY optional suppression based on organization-defined allowlists for hosts or source MAC addresses |
+OUTPUT host, firstTime, lastTime, firstTime_readable, lastTime_readable, event_count, message_types, src_macs"
+Cisco Secure Firewall - Citrix NetScaler Memory Overread Attempt,"SEARCH data from ""Cisco Secure Firewall Threat Defense Intrusion Event""
+| FILTER records where EventType equals ""IntrusionEvent""
+| FILTER records where signature_id equals 65118
+| FILL_MISSING for fields [signature_id, signature, class_desc, MitreAttackGroups, InlineResult, InlineResultReason, src_ip, dest_ip, dest_port, rule, transport, app] with a consistent placeholder
+| AGGREGATE BY dest_ip:
+  - COMPUTE firstTime = MIN(event_time)
+  - COMPUTE lastTime = MAX(event_time)
+  - COMPUTE signature_id_set = DISTINCT(signature_id)
+  - COMPUTE signature_set = DISTINCT(signature)
+  - COMPUTE class_desc_set = DISTINCT(class_desc)
+  - COMPUTE mitre_attack_groups_set = DISTINCT(MitreAttackGroups)
+  - COMPUTE inline_result_set = DISTINCT(InlineResult)
+  - COMPUTE inline_result_reason_set = DISTINCT(InlineResultReason)
+  - COMPUTE src_ip_set = DISTINCT(src_ip)
+  - COMPUTE dest_port_set = DISTINCT(dest_port)
+  - COMPUTE rule_set = DISTINCT(rule)
+  - COMPUTE transport_set = DISTINCT(transport)
+  - COMPUTE app_set = DISTINCT(app)
+| DERIVE firstTime_readable = CONVERT_TIME(firstTime)
+| DERIVE lastTime_readable = CONVERT_TIME(lastTime)
+| OUTPUT fields [dest_ip, firstTime, lastTime, firstTime_readable, lastTime_readable, signature_id_set, signature_set, class_desc_set, mitre_attack_groups_set, inline_result_set, inline_result_reason_set, src_ip_set, dest_port_set, rule_set, transport_set, app_set]"
+Cisco Secure Firewall - Intrusion Events by Threat Activity,
+Cisco Secure Firewall - Remote Access Software Usage Traffic,"SEARCH Cisco Secure Firewall Threat Defense Connection Event records | FILTER records where EventType equals ""ConnectionEvent"" | GROUP records by src_ip, ClientApplication, action | COMPUTE for each group: firstTime = minimum event time; lastTime = maximum event time; count = number of records; dest_port = unique set of destination ports; dest = unique set of destination IPs/hosts; transport = unique set of transport protocols; url = unique set of URLs; rule = unique set of policy/rule identifiers | DERIVE human-readable timestamps from firstTime and lastTime | ENRICH each group by matching ClientApplication to a reference dataset of remote management/desktop tools (fields added: category, Description) | FILTER groups where category is one of [""remote administration"", ""remote desktop control""] | APPLY exception/allowlist filters to remove known authorized remote access usage | APPLY any additional environment-specific filters for this detection | OUTPUT firstTime, lastTime, src_ip, ClientApplication, action, count, dest_port, dest, transport, url, rule, category, Description"
+Windows AD Replication Service Traffic,"SEARCH network traffic logs with fields: source, destination, application_name, transport_protocol, user_identity, source_category, destination_category, timestamp |
+FILTER records where application_name equals ""ms-dc-replication"" OR application_name contains ""drsr"" OR application_name equals ""ad drs"" |
+GROUP records by source, destination, application_name |
+AGGREGATE per group: COUNT events as event_count, COLLECT DISTINCT transport_protocol as transport_set, COLLECT DISTINCT user_identity as user_set, COLLECT DISTINCT source_category as src_category_set, COLLECT DISTINCT destination_category as dest_category_set, MIN timestamp as firstTime, MAX timestamp as lastTime |
+DERIVE firstTimeReadable and lastTimeReadable by converting firstTime and lastTime to human-readable timestamps |
+TRANSFORM field names to remove any dataset-specific prefixes if present |
+APPLY environment-specific exclusions to suppress known-good or expected AD replication (e.g., domain controller to domain controller pairs, approved sources) |
+OUTPUT source, destination, application_name, event_count, transport_set, user_set, src_category_set, dest_category_set, firstTime, firstTimeReadable, lastTime, lastTimeReadable"
+Detect IPv6 Network Infrastructure Threats,
+Windows DNS Query Request by Telegram Bot API,"SEARCH endpoint DNS query telemetry events where event_id equals 22 (DNS query events) | PARSE fields needed for analysis: event_time, query, process_name, process_exec, process_guid, answer, answer_count, query_count, reply_code_id, device (dvc), source (src), user_id, vendor_product, signature, signature_id, QueryName, QueryResults, QueryStatus | FILTER records where query equals ""api.telegram.org"" | FILTER records where process_name does not equal ""telegram.exe"" | GROUP records by answer, answer_count, device (dvc), process_exec, process_guid, process_name, query, query_count, reply_code_id, signature, signature_id, source (src), user_id, vendor_product, QueryName, QueryResults, QueryStatus | DERIVE metrics: total_events as count of records, first_time as minimum event_time, last_time as maximum event_time per group | FORMAT first_time and last_time into human-readable timestamps | APPLY optional environment-specific suppressions to exclude known benign hosts, users, or processes | OUTPUT first_time, last_time, total_events, and all grouping fields for each group"
+Cisco Secure Firewall - Repeated Blocked Connections,"SEARCH records from Cisco Secure Firewall Threat Defense Connection Event data source
+| FILTER where event_type equals ""ConnectionEvent""
+| FILTER where action value is one of [""Block with reset"", ""Block"", ""blocked""] (case-insensitive match)
+| DERIVE minute_bucket by rounding event_time down to the nearest 1 minute
+| GROUP BY src_ip, dest, transport, rule, action AGGREGATE:
+  - total_count = count of records
+  - first_time = minimum event_time
+  - last_time = maximum event_time
+  - dest_ports = distinct list of dest_port values
+  - urls = distinct list of url values
+| FILTER where total_count >= 10
+| DERIVE first_time_readable by converting first_time to a human-readable timestamp
+| DERIVE last_time_readable by converting last_time to a human-readable timestamp
+| APPLY optional suppression list to remove known-benign src_ip/dest/port/rule/action combinations (if available)
+| OUTPUT src_ip, dest, transport, rule, action, dest_ports, urls, total_count, first_time, last_time, first_time_readable, last_time_readable"
+Protocol or Port Mismatch,"SEARCH network traffic or connection events containing at least: timestamp, src_ip, dest_ip, dest_port, transport_protocol, application_name, action, rule_id | FILTER events where (application_name = ""dns"" AND dest_port != 53) OR (application_name IN {""web-browsing"",""http""} AND dest_port NOT IN {80,8080,8000}) OR (application_name = ""ssl"" AND dest_port NOT IN {443,8443}) OR (application_name = ""smtp"" AND dest_port != 25) | GROUP BY src_ip, dest_ip, application_name, dest_port, transport"
+Cisco Secure Firewall - Bits Network Activity,"SEARCH Cisco Secure Firewall Threat Defense Connection Event logs
+| FILTER records where EventType equals ""ConnectionEvent""
+| FILTER records where action is in [""Trust"", ""Allow"", ""allowed""]
+| FILTER records where ClientApplication equals ""BITS""
+| FILTER records where url does not match the pattern ""*://msedge.b.tlu.dl*""
+| GROUP records by src_ip, dest, dest_port, transport, rule, url, EVE_Process, ClientApplication, ClientApplicationVersion, action
+| COMPUTE event_count = count of records per group, firstTime = minimum event timestamp per group, lastTime = maximum event timestamp per group
+| DERIVE firstTime_readable = convert firstTime to human-readable format, lastTime_readable = convert lastTime to human-readable format
+| APPLY optional environment-specific allowlists or suppression rules to reduce known benign BITS traffic (e.g., additional trusted domains)
+| OUTPUT src_ip, dest, dest_port, transport, rule, url, EVE_Process, ClientApplication, ClientApplicationVersion, action, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Excessive DNS Failures,
+Detect DGA domains using pretrained model in DSDL,"SEARCH DNS resolution events within the selected time range
+| PARSE fields: source_endpoint (e.g., client IP), queried_domain (e.g., FQDN), resolved_ip, event_time
+| FILTER events WHERE queried_domain is not null AND resolved_ip is not null
+| GROUP BY source_endpoint, queried_domain AGGREGATE unique(resolved_ip) AS IPs, min(event_time) AS firstTime, max(event_time) AS lastTime
+| DERIVE domain := queried_domain
+| APPLY pre-trained model ""pretrained_dga_model_dsdl"" ON field domain TO PRODUCE dga_score (probability of DGA)
+| FILTER groups WHERE dga_score > 0.5
+| FORMAT firstTime, lastTime as human-readable timestamps
+| OUTPUT fields: source_endpoint AS src, domain, IPs, firstTime, lastTime, dga_score"
+Cisco Secure Firewall - File Download Over Uncommon Port,
+Windows Abused Web Services,"SEARCH process-originated DNS query events from Windows hosts where event code equals 22 | FILTER events where QueryName contains any of: ""pastebin"", ""textbin"", ""ngrok.io"", ""discord"", ""duckdns.org"", ""pasteio.com"" | GROUP events by answer, answer_count, dvc, process_exec, process_guid, process_name, query, query_count, reply_code_id, signature, signature_id, src, user_id, vendor_product, QueryName, QueryResults, QueryStatus | COMPUTE event_count = number of events per group, firstTime = earliest event timestamp per group, lastTime = latest event timestamp per group | FORMAT firstTime and lastTime"
+Ngrok Reverse Proxy on Network,"SEARCH DNS resolution telemetry from network sensors and endpoint DNS logs (e.g., Sysmon Event ID 22) within the analysis window
+| PARSE each event to extract: event_time, src_endpoint (host or ip), dns_query (FQDN), dns_answer (IP/CNAME/TXT/etc.), dns_reply_code, vendor_product, question_count (if present), answer_record_count (if present)
+| FILTER events where dns_query matches any of the following patterns: *.ngrok.com, *.ngrok.io, ngrok.*.tunnel.com, korgn.*.lennut.com
+| GROUP events by dns_answer, dns_query, dns_reply_code, src_endpoint, vendor_product
+| COMPUTE per group: total_events = count(events), first_seen = min(event_time), last_seen = max(event_time)
+| FORMAT first_seen and last_seen into human-readable timestamps
+| APPLY environment-specific allowlists or suppression rules for known/approved ngrok usage (if defined)
+| OUTPUT per group: src_endpoint, dns_query, dns_answer, dns_reply_code, vendor_product, total_events, first_seen, last_seen"
+Suspicious Process With Discord DNS Query,"SEARCH Sysmon DNS query events where event_id equals 22
+| FILTER events where QueryName contains the substring ""discord"" (case-insensitive, substring match)
+| FILTER out events where Image contains ""\AppData\Local\Discord\"" OR Image contains ""\Program Files"" OR the executable name equals ""discord.exe""
+| GROUP records by the following fields to form distinct activity tuples: answer, answer_count, dvc, process_exec, process_guid, process_name, query, query_count, reply_code_id, signature, signature_id, src, user_id, vendor_product, QueryName, QueryResults, QueryStatus
+| COMPUTE for each group: total_event_count = number of records; firstTime = minimum event timestamp; lastTime = maximum event timestamp
+| CONVERT firstTime and lastTime to human-readable timestamps
+| OUTPUT the grouped fields plus total_event_count, firstTime, lastTime"
+Detect Large ICMP Traffic,
+Detect Windows DNS SIGRed via Splunk Stream,
+Windows Spearphishing Attachment Connect To None MS Office Domain,"SEARCH Windows endpoint DNS query telemetry corresponding to DNS query events (e.g., Sysmon Event ID 22) and COLLECT fields: timestamp, device identifier, source host/address, process image path, process executable, process name, process GUID, user identifier, vendor/product identifiers, DNS query name (FQDN), raw query text, DNS query results/answers, answer count, query count, DNS reply/status codes, and any signatures/signature IDs
+
+PARSE process image path to ensure availability of both process_image_path and process_name (derive process_name from the trailing filename if not already present)
+
+FILTER events where process_image_path ends with any of:
+- \winword.exe
+- \excel.exe
+- \powerpnt.exe
+- \mspub.exe
+- \visio.exe
+- \wordpad.exe
+- \wordview.exe
+- \onenote.exe
+- \onenotem.exe
+- \onenoteviewer.exe
+- \onenoteim.exe
+- \msaccess.exe
+
+FILTER events where the DNS query name’s domain suffix is NOT in the set {office.com, office.net} (perform a suffix match so that any subdomain under these domains is excluded)
+
+GROUP remaining events by:
+- DNS answer
+-"
+Cisco Secure Firewall - Blocked Connection,"SEARCH records from Cisco Secure Firewall Threat Defense connection event logs | FILTER EventType equals ""ConnectionEvent"" | FILTER action is in [""Block with reset"", ""Block"", ""blocked""] | GROUP BY src_ip, dest, dest_port, transport, rule, url, EVE_Process, action | COMPUTE eventCount = count(), firstTime = min(event timestamp), lastTime = max(event timestamp) | DERIVE firstTime_readable = convert_timestamp(firstTime), lastTime_readable = convert_timestamp(lastTime) | FILTER out results matching environment-specific suppression criteria to remove known benign or test activity (optional) | OUTPUT src_ip, dest, dest_port, transport, rule, url, EVE_Process, action, eventCount, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Cisco Secure Firewall - Malware File Downloaded,"SEARCH data from ""Cisco Secure Firewall Threat Defense File Event""
+| FILTER where EventType equals ""FileEvent""
+| FILTER where SHA_Disposition equals ""Malware""
+| FILTER where FileDirection equals ""Download""
+| ENRICH with file type reference data by matching reference.Name to event.FileType to add field Description
+| GROUP records by FileDirection, dest, src_ip, dest_port, FileType, app, file_name, ThreatName, Description
+| COMPUTE for each group: count, firstTime = minimum event time, lastTime = maximum event time, uri = unique set of uri values, ClientApplication = unique set of ClientApplication values, file_hash = unique set of file_hash values
+| FORMAT firstTime and lastTime as human-readable timestamps
+| SELECT fields in order: firstTime, lastTime, src_ip, dest, dest_port, FileDirection, FileType, Description, uri, file_name, file_hash, app, ClientApplication, ThreatName, SHA_Disposition
+| APPLY post-processing filters or allowlists specific to this analytic (if defined)"
+Detect Software Download To Network Device,"SEARCH network traffic telemetry within the desired time range
+| FILTER where ((protocol = UDP AND destination_port = 69) OR (protocol = TCP AND destination_port = 21) OR (protocol = TCP AND destination_port = 22))
+| FILTER destination_category != ""common_software_repo_destination""
+| FILTER source_category IN [""network"", ""router"", ""switch""]
+| GROUP BY source_address, destination_address, destination_port
+| COMPUTE event_count = COUNT(), first_seen = MIN(event_time), last_seen = MAX(event_time)
+| FORMAT first_seen, last_seen as human-readable timestamps
+| APPLY environment-specific allowlist to exclude known benign source/destination pairs or repositories
+| OUTPUT source_address, destination_address, destination_port, event_count, first_seen, last_seen"
+Linux GDB Privilege Escalation,"SEARCH endpoint process creation events from EDR telemetry (e.g., Linux process start logs) within the desired time range
+| FILTER events where process.command_line contains the substring ""gdb""
+| FILTER events where process.command_line contains the substring ""-nx""
+| FILTER events where process.command_line contains the substring ""-ex""
+| FILTER events where process.command_line matches the pattern: ""-ex"" followed by optional whitespace and a literal ""!"" (to identify a shell escape, e.g., ""-ex !..."")
+| FILTER events where process.command_line contains the substring ""sudo""
+| GROUP records by host, action, vendor_product, process.command_line, process.name, process.path, process.executable, process.id, process.guid, process.hash, process.integrity_level, user.name, user.id, parent_process.command_line, parent_process.name, parent_process.path, parent_process.executable, parent_process.id, parent_process.guid
+| COMPUTE event_count for each group, first_seen_time as the minimum event_time in the group, last_seen_time as the maximum event_time in the group
+| DERIVE human_readable_first_seen_time and human_readable_last_seen_time from first_seen_time and last_seen_time
+| APPLY optional environment-specific suppression rules to exclude known benign or test scenarios
+| OUTPUT the grouped fields, event_count, first_seen_time, last_seen_time, and their human-readable forms"
+Powershell Creating Thread Mutex,"SEARCH PowerShell Script Block Logging events
+| FILTER EventCode equals 4104
+| FILTER ScriptBlockText contains substring ""Threading.Mutex""
+| FILL_MISSING on all grouping fields (dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText) with placeholders
+| GROUP records BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE per group: event_count = count of records, firstTime = minimum event_time, lastTime = maximum event_time
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY environment-specific filtering to suppress known benign patterns for this detection
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, event_count, firstTime, lastTime"
+Linux Auditd Osquery Service Stop,"SEARCH Linux Auditd telemetry
+| FILTER events where type equals ""SERVICE_STOP""
+| FILTER events where unit equals ""osqueryd""
+| GROUP BY type, pid, comm, exe, unit, host
+| COMPUTE event_count = COUNT(), firstTime = MIN(event_time), lastTime = MAX(event_time)
+| FORMAT firstTime and lastTime into human-readable timestamps as firstTime_readable and lastTime_readable
+| APPLY optional environment-specific suppression/exclusions to remove known benign service stops (if available)
+| OUTPUT type, pid, comm, exe, unit, host, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Windows MsiExec HideWindow Rundll32 Execution,
+Windows AD ServicePrincipalName Added To Domain Account,"SEARCH Windows Security Event Logs for events with EventID equals 5136
+| FILTER records where AttributeLDAPDisplayName equals ""servicePrincipalName""
+| FILTER records where OperationType indicates an attribute value was added (e.g., “Value Added”)
+| FILTER records where ObjectClass equals ""user""
+| GROUP records BY event_timestamp, Computer, SubjectUserName, AttributeValue AGGREGATE unique set of ObjectDN as ObjectDN
+| PARSE ObjectDN to extract user from the pattern ""CN=<user>,""
+| DERIVE dest = Computer, src_user = SubjectUserName
+| FILTER out events matching environment-specific allowlists or known benign change sources (optional)
+| OUTPUT event_timestamp, dest, src_user, user, AttributeValue, ObjectDN"
+Powershell Windows Defender Exclusion Commands,"SEARCH PowerShell Script Block Logging events where event_id == 4104
+| FILTER events where script_block_text contains (case-insensitive) ""Add-MpPreference"" OR ""Set-MpPreference""
+| FILTER events where script_block_text contains (case-insensitive) ""-exclusion""
+| PARSE fields from each event: timestamp, dest, signature, signature_id, user_id, vendor_product, event_id, guid, opcode, name, path, process_id, script_block_id, script_block_text
+| DERIVE default value ""unknown"" for any of the above fields that are missing
+| GROUP events BY dest, signature, signature_id, user_id, vendor_product, event_id, guid, opcode, name, path, process_id, script_block_id, script_block_text
+| COMPUTE count = number of events per group, firstTime = earliest timestamp per group, lastTime = latest timestamp per group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY environment-specific allowlist to exclude known benign hosts, users, processes, or script patterns
+| OUTPUT count, firstTime, lastTime, dest, signature, signature_id, user_id, vendor_product, event_id, guid, opcode, name, path, process_id, script_block_id, script_block_text"
+Windows Mimikatz Crypto Export File Extensions,"SEARCH endpoint filesystem activity events within the query’s time range, capturing at least: event_time, action, dest, file_name, file_path, file_access_time, file_create_time, file_modify_time, file_hash, file_acl, file_size, process_guid, process_id, user, vendor_product
+| FILTER events where file_name matches any of the following suffix patterns (case-insensitive): "".keyx.rsa.pvk"", ""sign.rsa.pvk"", ""sign.dsa.pvk"", ""dsa.ec.p8k"", ""dh.ec.p8k"", "".pfx"", "".der""
+| GROUP events by action, dest, file_access_time, file_create_time, file_modify_time, file_hash, file_name, file_path, file_acl, file_size, process_guid, process_id, user, vendor_product
+| COMPUTE for each group: event_count = count(events), firstTime = minimum(event_time), lastTime = maximum(event_time"
+Windows Executable in Loaded Modules,"SEARCH Windows Sysmon data capturing module load events (Event ID 7) with fields including timestamp, process executable path (Image), loaded module path (ImageLoaded), host (dest), loaded_file, loaded_file_path, original_file_name, process_exec, process_guid, process_hash, process_id, process_name, process_path, service_dll_signature_exists, service_dll_signature_verified, signature, signature_id, user_id, vendor_product
+| FILTER event_id == 7
+| FILTER module_loaded_path (ImageLoaded) ends with "".exe"" (case-insensitive)
+| HANDLE missing values for [Image, ImageLoaded, dest, loaded_file, loaded_file_path, original_file_name, process_exec, process_guid, process_hash, process_id, process_name, process_path, service_dll_signature_exists, service_dll_signature_verified, signature, signature_id, user_id, vendor_product] by replacing with a placeholder
+| GROUP records BY [Image, ImageLoaded, dest, loaded_file, loaded_file_path, original_file_name, process_exec, process_guid, process_hash, process_id, process_name, process_path, service_dll_signature_exists, service_dll_signature_verified, signature, signature_id, user_id, vendor_product]
+| COMPUTE event_count = COUNT(), firstTime = MIN(timestamp), lastTime = MAX(timestamp)
+| DERIVE firstTime_readable = FORMAT_TIMESTAMP(firstTime), lastTime_readable = FORMAT_TIMESTAMP(lastTime)
+| APPLY optional allowlist/suppression rules to remove known benign executable module loads based on environment-specific criteria
+| OUTPUT [Image, ImageLoaded, dest, loaded_file, loaded_file_path, original_file_name, process_exec, process_guid, process_hash, process_id, process_name, process_path, service_dll_signature_exists, service_dll_signature_verified, signature, signature_id, user_id, vendor_product, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable]"
+Rundll32 Shimcache Flush,"SEARCH process execution events from endpoint telemetry over the desired time range
+| FILTER event_type equals ""process start"" or ""process creation""
+| FILTER process.executable_name equals ""rundll32.exe"" (case-insensitive) OR process.original_file_name equals ""RUNDLL32.EXE""
+| FILTER process.command_line contains the substring ""apphelp.dll,ShimFlushCache"" (case-insensitive)
+| GROUP BY
+  - event.action
+  - host.name
+  - process.original_file_name
+  - parent_process.command_line
+  - parent_process.executable_path
+  - parent_process.guid
+  - parent_process.id
+  - parent_process.name
+  - parent_process.path
+  - process.command_line
+  - process.executable_path
+  - process.guid
+  - process.hash
+  - process.id
+  - process.integrity_level
+  - process.name
+  - process.path
+  - user.name
+  - user.id
+  - telemetry.vendor_product
+| COMPUTE
+  - event_count = count of grouped events
+  - first_time = earliest event time in the group
+  - last_time = latest event time in the group
+| FORMAT first_time and last_time as human-readable timestamps
+| APPLY organization-specific allowlists/exclusions to remove known-benign rundll32 usage (e.g., approved hosts, users,"
+Windows PowerShell Add Module to Global Assembly Cache,"SEARCH PowerShell Script Block Logging events
+| FILTER events where the event identifier equals 4104
+| FILTER events where ScriptBlockText contains the substring ""system.enterpriseservices.internal.publish"" (case-insensitive)
+| APPLY default values to missing fields for dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| GROUP BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE eventCount = number of events per group, firstTime = earliest event time in group, lastTime = latest event time in group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY environment-specific allowlist rules to exclude known benign users, hosts, processes, paths, or script patterns
+| OUTPUT dest, user_id, ProcessID, ScriptBlockId, ScriptBlockText, signature, signature_id, vendor_product, EventID, Guid, Opcode, Name, Path, eventCount, firstTime, lastTime"
+Windows PowerShell Invoke-Sqlcmd Execution,
+Detect suspicious processnames using pretrained model in DSDL,"SEARCH endpoint process creation telemetry (e.g., Sysmon Event ID 1) within the desired time range"
+Get ADUserResultantPasswordPolicy with Powershell,"SEARCH process creation events from endpoint and operating system telemetry within the analysis time window, including fields: timestamp, host, user, user_id, process_name, process_path, process_command_line, process_id, process_guid, process_hash, process_integrity_level, original_file_name, outcome/action, vendor_product, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_command_line, parent_process_exec_path
+| FILTER process_name EQUALS ""cmd.exe"" OR process_name STARTS_WITH ""powershell""
+| FILTER process_command_line CONTAINS ""Get-ADUserResultantPasswordPolicy""
+| GROUP BY outcome/action, host, original_file_name, parent_process_command_line, parent_process_exec_path, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process_command_line, process_exec_path, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| AGGREGATE COUNT() AS event_count, MIN(timestamp) AS first_seen, MAX(timestamp) AS last_seen
+| DERIVE first_seen_readable = CONVERT_TIME_TO_READABLE(first_seen), last_seen_readable = CONVERT_TIME_TO_READABLE(last_seen)
+| APPLY optional environment-specific suppression (e.g., exclude known admin scripts, trusted hosts, or service accounts) based on maintained allowlists
+| OUTPUT grouped fields plus event_count, first_seen, last_seen, first_seen_readable, last_seen_readable"
+Suspicious DLLHost no Command Line Arguments,
+Processes Tapping Keyboard Events,"SEARCH events representing osquery result alerts | FILTER where field app equals ""osquery:results"" AND field name equals ""pack_osx-attacks_Keyboard_Event_Taps"" | DERIVE cmd from field columns.cmdline, process_name from field columns.name, process_id from field columns.pid | DEDUP records by fields host and process_name, keeping the first occurrence per unique pair | SELECT fields host, process_name, cmd, process_id | FILTER out records matching environment-specific allowlists (if any) | OUTPUT the remaining records"
+Schtasks used for forcing a reboot,
+Cisco NVM - Non-Network Binary Making Network Connection,"SEARCH Cisco Network Visibility Module Flow Data |
+FILTER where process_name is in [""notepad.exe"",""write.exe"",""mspaint.exe"",""calc.exe"",""addinutil.exe"",""cmstp.exe"",""dialer.exe"",""eqnedt32.exe"",""IMEWDBLD.exe""] |
+FILTER where destination IP is NOT within any of the following networks or addresses: [""10.0.0.0/8"",""172.16.0.0/12"",""192.168.0.0/16"",""100.64.0.0/10"",""127.0.0.0/8"",""169.254.0.0/16"",""192.0.0.0/24"",""192.0.0.0/29"",""192.0.0.8/32"",""192.0.0.9/32"",""192.0.0.10/32"",""192.0.0.170/32"",""192.0.0.171/32"",""192.0.2.0/24"",""192.31.196.0/24"",""192.52.193.0/24"",""192.88.99.0/24"",""224.0.0.0/4"",""192.175.48.0/24"",""198.18.0.0/15"",""198.51.100.0/24"",""203.0.113.0/24"",""240.0.0.0/4"",""::1""] |
+GROUP BY src, dest, parent_process_path, parent_process_integrity_level, process_path, process_name, process_integrity_level, process_id, transport WITH AGGREGATIONS:
+- COMPUTE count of events as count
+- COMPUTE earliest event time as firstTime
+- COMPUTE latest event time as lastTime
+- COLLECT unique parent_process_arguments as parent_process_arguments
+- COLLECT unique process_arguments as process_arguments
+- COLLECT unique parent_process_hash as parent_process_hash
+- COLLECT unique process_hash as process_hash
+- COLLECT unique module_name_list as module_name_list
+- COLLECT unique module_hash_list as module_hash_list
+- COLLECT unique dest_port as dest_port
+- COLLECT unique additional_logged_in_users_list as additional_logged_in_users_list
+- COLLECT unique dest_hostname as dest_hostname |
+FORMAT firstTime and lastTime as human-readable timestamps |
+SELECT parent_process_integrity_level, parent_process_path, parent_process_arguments, parent_process_hash, process_integrity_level, process_path, process_name, process_arguments, process_hash, process_id, additional_logged_in_users_list, module_name_list, module_hash_list, src, dest_hostname, dest, dest_port, transport, firstTime, lastTime |
+APPLY optional environment-specific allowlists or suppressions for known benign activity |
+OUTPUT results"
+SilentCleanup UAC Bypass,"SEARCH registry modification events from endpoint telemetry (e.g., EDR or OS registry auditing) within the desired time range
+| PARSE each event to extract: timestamp, host, user, process_id, process_guid, process_name, action (e.g., set/create/modify), registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, vendor_product
+| FILTER events where registry_path contains ""\Environment\windir"" (case-insensitive)
+| FILTER events where registry_value_data contains an executable indicator (e.g., string matching "".exe"" optionally followed by arguments)
+| FILTER events where action denotes a write-like operation to a registry value (e.g., set, create, modify)
+| GROUP events by action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| AGGREGATE count of events per group
+| COMPUTE first_seen = earliest timestamp in group, last_seen = latest timestamp in group
+| APPLY allowlist/false-positive suppression (e.g., known benign hosts, users, processes, or specific value_data/value_name patterns)
+| OUTPUT grouped fields with count, first_seen, and last_seen"
+Vbscript Execution Using Wscript App,"SEARCH endpoint process execution telemetry (e.g., EDR, Sysmon) within the desired time range
+| FILTER events where (parent_process_name equals ""wscript.exe"" (case-insensitive) AND parent_process_command_line contains ""//e:vbscript"" (case-insensitive)) OR (process_name equals ""wscript.exe"" (case-insensitive) AND process_command_line contains ""//e:vbscript"" (case-insensitive))
+| GROUP BY
+  - action
+  - host
+  - original_file_name
+  - parent_process_command_line
+  - parent_process_executable_path
+  - parent_process_guid
+  - parent_process_id
+  - parent_process_name
+  - parent_process_path
+  - process_command_line
+  - process_executable_path
+  - process_guid
+  - process_hash
+  - process_id
+  - process_integrity_level
+  - process_name
+  - process_path
+  - user
+  - user_id
+  - vendor_product
+| COMPUTE event_count = count(), first_time = min(event_timestamp), last_time = max(event_timestamp)
+| DERIVE first_time_readable and"
+Windows Remote Service Rdpwinst Tool Execution,"SEARCH process execution telemetry from endpoint and OS logs (e.g., EDR process events, Windows process creation events) within the analysis time window, retrieving at minimum: event_time, action, host, user, user_id, vendor_product, process_name, original_file_name, process_path, process_executable, process_id, process_guid, process_hash, command_line, integrity_level, parent_process_name, parent_process_path, parent_process_executable, parent_process_id, parent_process_guid
+| FILTER events where process_name equals ""RDPWInst.exe"" OR original_file_name equals ""RDPWInst.exe""
+| FILTER events where command_line contains any of these switches: "" -i"", "" -s"", "" -o"", "" -w"", or "" -r"" (match as a space followed by a dash and one of the listed letters; case-insensitive)
+| GROUP records by action, host, original_file_name, parent"
+FodHelper UAC Bypass,"SEARCH endpoint process creation telemetry from sources such as Sysmon Event ID 1, Windows Security 4688, and EDR process data |
+FILTER events where parent_process_name equals ""fodhelper.exe"" |
+GROUP records by action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product |
+AGGREGATE for each group: count as event_count, minimum event_time as firstTime, maximum event_time as lastTime |
+DERIVE firstTime_readable and lastTime_readable by converting firstTime and lastTime to human-readable timestamps |
+FILTER out groups matching known benign or allowlisted patterns for this technique in the environment (for example, expected administrative tooling or approved parent-child relationships) |
+OUTPUT event_count, firstTime, lastTime, firstTime_readable, lastTime_readable, and all grouping fields"
+Excessive Attempt To Disable Services,"SEARCH endpoint process creation events from sources: Sysmon Event ID 1, Windows Security 4688, and EDR process telemetry
+| FILTER events where process_name equals ""sc.exe""
+| FILTER events where command_line contains ""config"" OR command_line contains ""Disabled""
+| DERIVE time_bucket as event_time truncated to 1-minute boundaries
+| GROUP events BY time_bucket, host, user, process_name, parent_process_name
+| AGGREGATE for each group: 
+  - count = number of events
+  - first_seen = minimum event_time
+  - last_seen = maximum event_time
+  - collect_distinct values for fields if present: action, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_path, user_id, vendor_product
+| FILTER groups where count >= 4 within the same 1-minute time_bucket
+| OUTPUT host, user, process_name, parent_process_name, count, first_seen, last_seen"
+Windows Privilege Escalation User Process Spawn System Process,
+Windows InstallUtil Remote Network Connection,
+Single Letter Process On Endpoint,
+Windows CAB File on Disk,
+Windows Process Injection Remote Thread,
+Windows Proxy Via Netsh,"SEARCH process creation events from endpoint and operating system telemetry (e.g., Sysmon Event ID 1, Windows Security 4688, EDR process data) within the desired time range
+| FILTER events where the process name or original file name equals ""netsh.exe""
+| FILTER events where the process command line contains the substring ""portproxy""
+| FILTER events where the process command line also contains the substring ""v4tov4""
+| SELECT fields needed for analysis: timestamp, host/device, user, vendor_product, action, original_file_name, process_name, process_path, process_command_line, process_id, process_guid, process_hash, process_integrity_level, process_exec, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_exec
+| GROUP records by the selected non-time fields and COMPUTE metrics: event_count, first_time = minimum timestamp, last_time = maximum timestamp
+| DERIVE human_readable_first_time and human_readable_last_time from first_time and last_time
+| FILTER OUT records matching environment-specific allowlists or known benign patterns (if available)
+| OUTPUT grouped results with event_count, time bounds, and the selected context fields"
+Windows Remote Access Software RMS Registry,"SEARCH registry activity events from endpoints
+| FILTER records where registry_path contains ""\SYSTEM\Remote Manipulator System"" (case-insensitive substring match)
+| GROUP records by action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product
+| COMPUTE total_events = COUNT(), first_time = MIN(event_time), last_time = MAX(event_time)
+| FORMAT first_time and last_time as human-readable timestamps
+| APPLY optional environment-specific allowlists or tuning to exclude known legitimate RMS administration activity
+| OUTPUT the grouped fields with total_events, first_time, and last_time"
+Windows UAC Bypass Suspicious Escalation Behavior,
+Windows Steal Authentication Certificates Certificate Request,"SEARCH Windows Security Event Logs for events indicating a certificate request received (event_id = 4886)
+| PARSE fields needed from each event: timestamp, dest, name, Requester, action, Attributes
+| GROUP records BY dest, name, Requester, action, Attributes
+| COMPUTE event_count = number of records in each group, firstTime = minimum timestamp in group, lastTime = maximum timestamp in group
+| DERIVE firstTime = convert firstTime to a human-readable datetime, lastTime = convert lastTime to a human-readable datetime
+| APPLY filter to exclude groups matching organization-defined allowlists or known-benign patterns on dest, name, Requester, action, Attributes
+| OUTPUT dest, name, Requester, action, Attributes, event_count, firstTime, lastTime"
+Windows Suspicious Driver Loaded Path,
+Powershell Fileless Process Injection via GetProcAddress,"SEARCH PowerShell Script Block Logging events
+| FILTER EventCode equals 4104
+| FILTER ScriptBlockText contains the substring ""getprocaddress"" (case-insensitive)
+| FILL missing values in [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with empty string
+| GROUP BY [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText]
+| COMPUTE event_count = COUNT(), firstTime = MIN(event_time), lastTime = MAX(event_time)
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY environment-specific suppression rules to exclude known benign script blocks or trusted sources (if available)
+| OUTPUT [firstTime, lastTime, event_count, dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText]"
+Windows Odbcconf Load DLL,"SEARCH process-creation events from:
+- Windows Sysmon (Event ID 1)
+- Windows Security Audit (Event ID 4688)
+- EDR/endpoint process telemetry (e.g., CrowdStrike ProcessRollup2)
+within the requested time range
+|
+PARSE fields: timestamp, host, user, user_id, vendor_product, action, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_exec, process_exec
+|
+FILTER event_type == process_creation
+|
+FILTER process_name equals ""odbcconf.exe"" (case-insensitive)
+|
+FILTER command_line contains any of [""/a"", ""-a""] (case-insensitive; allow optional whitespace after the flag)
+|
+FILTER command_line contains ""regsvr"" (case-insensitive)
+|
+GROUP BY host, user, user_id, vendor_product, action, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_exec, process_name, process_path, command_line, process_exec, process_id, process_guid, process_hash, process_integrity_level
+|
+COMPUTE count = number of matching events per group; firstTime = earliest timestamp per group; lastTime = latest timestamp per group
+|
+FORMAT firstTime and lastTime to human-readable timestamps
+|
+OUTPUT fields: host, user, user_id, vendor_product, action, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_exec, process_name, process_path, command_line, process_exec, process_id, process_guid, process_hash, process_integrity_level, count, firstTime, lastTime"
+Windows Archive Collected Data via Rar,"SEARCH process creation and process execution events from Sysmon (Event ID 1), Windows Security (Event ID 4688), and EDR process telemetry (e.g., CrowdStrike ProcessRollup2) within the desired time range
+| PARSE fields: timestamp, host/device, user, user_id, vendor_product, action, process_name, original_file_name, process_id, process_guid, process_path, process_exec, process_hash, process_integrity_level, command_line, parent_process_name, parent_process_path, parent_process, parent_process_exec, parent_process_id, parent_process_guid
+| FILTER where (process_name equals ""Rar.exe"") OR (original_file_name equals ""Rar.exe"" AND command_line contains ""a"" AND command_line contains "" -ep1"" AND command_line contains "" -r"" AND command_line contains "" -y"" AND command_line contains "" -v5m"" AND command_line contains "" -m1"")
+| GROUP BY action, host/device, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+|"
+Linux Kernel Module Enumeration,"SEARCH endpoint process execution events within the desired time window
+| PARSE fields: timestamp, action, host, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process_command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| FILTER records where process_name equals ""kmod""
+| FILTER records where process_command_line contains any of [""lsmod"", ""list""] using case-insensitive substring matching
+| GROUP BY action, host, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process_command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE event_count = COUNT(), first_seen_time = MIN(timestamp), last_seen_time = MAX(timestamp)
+| DERIVE first_seen_time_readable and last_seen_time_readable from first_seen_time and last_seen_time
+| APPLY optional environment-specific suppression filters to remove known benign kmod module"
+Windows New EventLog ChannelAccess Registry Value Set,
+Child Processes of Spoolsv exe,"SEARCH process-creation telemetry from endpoint/EDR data sources (e.g., Sysmon Event ID 1, Windows Security 4688, EDR process events) within the desired time range, ensuring fields include: event_time, event_action, host, vendor_product, user, user_id, process_id, process_guid, process_name, process_exec (image path), process_path, process_command_line, process_hash, process_integrity_level, parent_process_id, parent_process_guid, parent_process_name, parent_process_exec (image path), parent_process_path, parent_process_command_line, original_file_name
+| FILTER records where parent_process_name equals ""spoolsv.exe""
+| FILTER records where process_name is not equal to ""regsvr32.exe""
+| AGGREGATE event_count = COUNT(), distinct_child_process_names = SET(process_name), distinct_child_command_lines = SET(process_command_line), first_seen_time = MIN(event_time), last_seen_time = MAX(event_time) BY event_action, host, vendor_product, user, user_id, original_file_name, parent_process_id, parent_process_guid, parent_process_name, parent_process_exec, parent_process_path, parent_process_command_line, process_id, process_guid, process_name, process_exec, process_path, process_command_line, process_hash, process_integrity_level
+| DERIVE first_seen_time_human = FORMAT_TIMESTAMP(first_seen_time), last_seen_time_human = FORMAT_TIMESTAMP(last_seen_time)
+| APPLY exclusion list for known-benign child processes of spoolsv.exe (if available)
+| OUTPUT event_count, first_seen_time, last_seen_time, first_seen_time_human, last_seen_time_human, host, vendor_product, user, user_id, original_file_name, parent_process_id, parent_process_guid, parent_process_name, parent_process_exec, parent_process_path, parent_process_command_line, process_id, process_guid, process_name, process_exec, process_path, process_command_line, process_hash, process_integrity_level, distinct_child_process_names, distinct_child_command_lines"
+Linux Shred Overwrite Command,
+Windows User Deletion Via Net,"SEARCH process execution events from Sysmon EventID 1, Windows Security 4688, and EDR telemetry (e.g., CrowdStrike ProcessRollup2) | FILTER events where process_name equals ""net.exe"" OR ""net1.exe"" | FILTER events where command_line contains ""user"" AND command_line contains ""/delete"" (case-insensitive) | GROUP BY action,"
