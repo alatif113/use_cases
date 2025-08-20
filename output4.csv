@@ -1,0 +1,1145 @@
+name,response
+Windows User Deletion Via Net,"SEARCH endpoint process creation events within the selected timeframe from EDR/OS process logs | FILTER events where the process executable name or original file name equals ""net.exe"" or ""net1.exe"" | FILTER events where the full command line contains the substring ""user"" and also contains the substring ""/delete"" (case-insensitive) | PROJECT fields needed for analysis: event_time, host, user, user_id, process_id, process_guid, process_name, process_path, command_line, process_integrity_level, process_hash, parent_process_id, parent_process_guid, parent_process_name, parent_process_path, parent_command_line | GROUP records by host, user, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_command_line, parent_process_id, parent_process_guid | COMPUTE event_count = count(), first_seen_time = minimum(event_time), last_seen_time = maximum(event_time) | DERIVE first_seen_time_readable = format_time(first_seen_time), last_seen_time_readable = format_time"
+Windows Attempt To Stop Security Service,
+Windows AD Same Domain SID History Addition,"SEARCH Windows Security event logs for account change events | FILTER records where event_id is 4742 OR 4738 | FILTER out records where SidHistory is equal to ""%%1793"" OR ""-"" OR is missing | PARSE SidHistory to DERIVE SidHistoryMatch as the substring starting at the beginning (ignore a leading ""%{"" if present) and ending just before the first occurrence of ""-"" or ""\"" | PARSE TargetSid to DERIVE TargetSidMatch as the substring from the beginning up to (but not including) the first occurrence of ""-"" or ""\"" | FILTER records where SidHistoryMatch equals TargetSidMatch OR SidHistoryMatch equals TargetDomainName | DERIVE userSid = TargetSid, userDomainName = TargetDomainName | PROJECT time, action, status, host, user, userSid, userDomainName, SidHistory, Logon_ID, src_user, dest | OUTPUT results"
+Detect Rare Executables,
+Windows Remote Services Allow Remote Assistance,"SEARCH endpoint telemetry containing Windows registry value write/set events (e.g., Sysmon Event ID 13 or equivalent) |
+FILTER events to those where registry_path contains ""\Control\Terminal Server\fAllowToGetHelp"" (case-insensitive) |
+FILTER events to those where registry_value_data equals ""0x00000001"" OR equals ""1"" (enabled) |
+FILTER events to those with action indicating a successful registry value write/set (e.g., status = success) |
+GROUP records BY action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+COMPUTE count = number of records per group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group |
+OUTPUT firstTime, lastTime, count, action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product"
+Windows Scheduled Task Service Spawned Shell,"SEARCH endpoint process creation events from EDR and Windows process telemetry sources (e.g., Sysmon Event ID 1, CrowdStrike process events) |
+PARSE each event to extract"
+Windows Impair Defense Change Win Defender Tracing Level,
+Windows Registry Entries Restored Via Reg,
+System User Discovery With Whoami,
+Windows System User Privilege Discovery,"SEARCH process execution events from Endpoint/EDR and Windows process creation telemetry within the requested time range
+| FILTER events where process_name equals ""whoami.exe""
+| FILTER events where command_line contains the substring ""/priv"" (case-insensitive)
+| GROUP events by action, host, original_file_name, parent_command_line, parent_executable, parent_process_guid, parent_pid, parent_name, parent_path, command_line, executable, process_guid, process_hash, pid, integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE event_count per group, first_seen_time as the minimum event timestamp per group, last_seen_time as the maximum event timestamp per group
+| DERIVE human_readable_first_seen from first_seen_time, human_readable_last_seen from last_seen_time
+| APPLY environment-specific allowlist exclusions on any of: host, user, process_name, parent_name, command_line, to remove known benign occurrences
+| OUTPUT event_count, first_seen_time, last_seen_time, human_readable_first_seen, human_readable_last_seen, and all grouping fields for each result"
+Windows Modify Registry DisableRemoteDesktopAntiAlias,"SEARCH endpoint telemetry that records Windows registry modifications (e.g., value set/create events) |
+PARSE fields: event_time, host, action, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+FILTER registry_path contains ""\Terminal Services\DisableRemoteDesktopAntiAlias"" (case-insensitive) |
+FILTER registry_value_data equals 0x00000001 (treat hex or decimal representations as equivalent) |
+GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+COMPUTE event_count = COUNT(), firstTime = MIN(event_time), lastTime = MAX(event_time) |
+DERIVE firstTimeReadable = TO_READABLE_TIME"
+Windows Process Injection into Commonly Abused Processes,
+Allow Inbound Traffic In Firewall Rule,"SEARCH records from PowerShell Script Block Logging data source | PARSE each record to extract fields: timestamp, EventID, ScriptBlockText, dest, signature, signature_id, user_id, vendor_product, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId | FILTER EventID equals 4104 | FILTER ScriptBlockText contains the keyword ""firewall"" (case-insensitive) | FILTER ScriptBlockText contains the keyword ""Inbound"" (case-insensitive) | FILTER ScriptBlockText contains the keyword ""Allow"" (case-insensitive) | FILTER ScriptBlockText contains the switch ""-LocalPort"" (case-insensitive) | APPLY missing value handling to ensure dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText are present (replace null/empty with a placeholder) | GROUP records BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText | COMPUTE count of records per group, earliest timestamp as firstTime, latest timestamp as lastTime | FORMAT firstTime and lastTime into human-readable strings as firstTimeReadable and lastTimeReadable | APPLY exclusion filters to remove known benign patterns or approved scripts/paths/ports based on an allowlist (optional, organization-defined) | OUTPUT dest, user_id, ProcessID, Name, Path, ScriptBlockId, ScriptBlockText, signature, signature_id, vendor_product, EventID, Guid, Opcode, count, firstTime, lastTime, firstTimeReadable, lastTimeReadable"
+Windows Modify Registry MaxConnectionPerServer,"SEARCH endpoint registry modification events
+
+| PARSE fields: timestamp, action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status, user, vendor_product
+
+| FILTER registry_path matches ""*\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\MaxConnectionsPerServer*"" OR ""*\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\MaxConnectionsPer1_0Server*""
+
+| FILTER registry_value_data equals ""0x0000000a""
+
+| GROUP BY action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status, user, vendor_product
+
+| COMPUTE count = number of events in group, firstTime = earliest timestamp in group, lastTime = latest timestamp in group
+
+| FORMAT firstTime and lastTime as human-readable timestamps
+
+| APPLY optional environment-specific allowlist or suppression rules to remove known benign modifications
+
+| OUTPUT action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status, user, vendor_product, count, firstTime, lastTime"
+Windows Event For Service Disabled,"SEARCH Windows System event logs for service configuration change events with event identifier = 7040 within the desired time range
+| FILTER events where the event payload indicates the service start type was set to ""disabled"" (case-insensitive match on the event data text or structured field representing the new start type)
+| PARSE each event to extract: Computer (host), EventCode (event identifier), Name, UserID, service, ServiceName, and event timestamp
+| GROUP records BY Computer, EventCode, Name, UserID, service, ServiceName
+| COMPUTE count = number of events per group, firstTime = earliest timestamp in group, lastTime = latest timestamp in group
+| FORMAT firstTime and lastTime into human-readable timestamps
+| APPLY optional suppression filters to exclude known benign hosts/services/users if an allowlist/denylist is defined
+| OUTPUT Computer, EventCode, Name, UserID, service, ServiceName, count, firstTime, lastTime"
+Wermgr Process Create Executable File,"SEARCH telemetry from Sysmon FileCreate events (EventID = 11)
+| FILTER records where process_name equals ""wermgr.exe""
+| FILTER records where TargetFilename ends with "".exe"" (case-insensitive)
+| PARSE fields from each record: event_time, action, dest, TargetFilename, process_guid, process_id, user_id, vendor_product, process_name
+| DERIVE file_path = directory component of TargetFilename; file_name = base name component of TargetFilename
+| GROUP records by action, dest, file_name, file_path, process_guid, process_id, user_id, vendor_product
+| COMPUTE firstTime = minimum event_time within group, lastTime = maximum event_time within group, count = number of records in group
+| DERIVE firstTime_readable = human-readable timestamp from firstTime, lastTime_readable = human-readable timestamp from lastTime
+| APPLY optional environment-specific exclusion filter to remove known legitimate wermgr.exe file-creation paths or test activity
+| OUTPUT action, dest, file_name, file_path, process_guid, process_id, user_id, vendor_product, count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Services LOLBAS Execution Process Spawn,
+Windows Curl Upload to Remote Destination,
+Windows Steal Authentication Certificates CS Backup,"SEARCH Windows Security Event Log records
+| FILTER events where event_id equals 4876 (Active Directory Certificate Services backup)
+| GROUP records by dest, name, action, Caller_Domain, Caller_User_Name
+| COMPUTE for each group: event_count = count(records), first_time = earliest event timestamp, last_time = latest event timestamp
+| FORMAT first_time and last_time as human-readable datetimes
+| FILTER out groups matching known authorized AD CS backup activity (e.g., approved service accounts, approved hosts, or maintenance windows)
+| OUTPUT dest, name, action, Caller_Domain, Caller_User_Name, event_count,"
+Windows New Custom Security Descriptor Set On EventLog Channel,"SEARCH registry activity events from endpoint telemetry (e.g., Windows registry value set/modified events such as Sysmon Event ID 13)
+| FILTER operating_system equals ""Windows""
+| FILTER registry_path contains ""\Services\Eventlog\"" AND registry_value_name equals ""CustomSD""
+| AGGREGATE count as event_count, minimum event_time as firstTime, maximum event_time as lastTime BY action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product
+| FILTER registry_value_data IS NOT NULL
+| DERIVE firstTime_readable from firstTime as human-readable timestamp, lastTime_readable from lastTime as human-readable timestamp
+| APPLY allowlist to exclude known benign processes, users, paths, or products if available
+| OUTPUT event_count, firstTime, lastTime, firstTime_readable, lastTime_readable, action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product"
+Disabled Kerberos Pre-Authentication Discovery With Get-ADUser,"SEARCH PowerShell Script Block Logging records (event_id = 4104) within the chosen time range
+| FILTER records where script_block_text CONTAINS ""Get-ADUser"" (case-insensitive)
+| FILTER records where script_block_text CONTAINS ""4194304""
+| APPLY NULL-HANDLING by replacing nulls with empty strings for fields: destination, signature, signature_id, user_id, product, event_id, guid, opcode, event_name, script_path, process_id, script_block_id, script_block_text
+| GROUP records BY destination, signature, signature_id, user_id, product, event_id, guid, opcode, event_name, script_path, process_id, script_block_id, script_block_text
+| COMPUTE count = number of records per group, first_time = earliest event_time per group, last_time = latest event_time per group
+| FORMAT first_time and last_time as human-readable timestamps
+| APPLY optional allowlist/exclusions to remove known benign groups
+| OUTPUT destination, signature, signature_id, user_id, product, event_id, guid, opcode, event_name, script_path, process_id, script_block_id, script_block_text, count, first_time, last_time"
+Windows ISO LNK File Creation,"SEARCH endpoint file monitoring events (e.g., Windows Sysmon Event ID 11) within the desired time range |
+FILTER events where event indicates a file creation action |
+FILTER file_path contains ""\Microsoft\Windows\Recent\"" |
+FILTER file_name ends with any of ["".iso.lnk"", "".img.lnk"", "".vhd.lnk"", "".vhdx.lnk""] |
+SELECT event_time, action, host, user, file_path, file_name, file_size, file_hash, file_acl, file_create_time, file_modify_time, file_access_time, process_id, process_guid, vendor_product |
+GROUP BY action, host, user, file_path, file_name, file_size, file_hash, file_acl, file_create_time, file_modify_time, file_access_time, process_id, process_guid, vendor_product |
+COMPUTE count = number of events, firstTime = minimum(event_time), lastTime = maximum(event_time) |
+FORMAT firstTime and lastTime as human-readable timestamps |
+APPLY environment-specific allowlists or suppression rules if defined |
+OUTPUT count, firstTime, lastTime, and all group-by fields"
+GetDomainGroup with PowerShell,"SEARCH endpoint process-creation events from Sysmon EventID 1, Windows Security 4688, and EDR process telemetry (e.g., CrowdStrike ProcessRollup2) within the analysis time window
+| FILTER events where process_name equals ""powershell.exe""
+| FILTER events where command_line contains the substring ""Get-DomainGroup"" (case-insensitive)
+| SELECT fields: timestamp, action, host, vendor_product, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id
+| GROUP BY action, host, vendor_product, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id
+| COMPUTE count = number of events per group, firstTime = earliest timestamp in group, lastTime = latest timestamp in group
+| DERIVE firstTime_readable = convert firstTime to human-readable time, lastTime_readable = convert lastTime to human-readable time
+| FILTER out groups/events that match environment-specific benign patterns (e.g., approved admin scripts, maintenance accounts, expected management hosts), if such a suppression list exists
+| OUTPUT count, firstTime, lastTime, firstTime_readable, lastTime_readable, action, host, vendor_product, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id"
+Detect Renamed RClone,"SEARCH endpoint process creation telemetry (e.g., EDR/Sysmon/Windows Security) within the selected time range
+| FILTER events where original_file_name equals ""rclone.exe""
+| FILTER events where process_name does not equal ""rclone.exe""
+| SELECT fields: action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product, event_time
+| GROUP records by: action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE metrics: event_count = count(*), first_seen = min(event_time), last_seen = max(event_time)
+| FORMAT first_seen and last_seen as human-readable timestamps
+| APPLY environment-specific allowlists or exclusions for known benign renamed utilities
+| OUTPUT the grouped fields plus event_count, first_seen, last_seen"
+Windows ConHost with Headless Argument,
+Windows System Discovery Using Qwinsta,"SEARCH process execution events from Windows endpoints (sources may include Sysmon Event ID 1, Windows Security Event ID"
+PowerShell WebRequest Using Memory Stream,SEARCH PowerShell Script Block Logging events where EventID equals 410
+Windows Disable Shutdown Button Through Registry,
+Windows Impair Defense Add Xml Applocker Rules,
+Sdelete Application Execution,"SEARCH process execution telemetry from:
+- Windows Sysmon Event ID 1
+- Windows Security Audit Event ID 4688
+- EDR process events (e.g., CrowdStrike ProcessRollup2)
+within the requested time range
+
+| FILTER events where the action indicates a process start/creation
+
+| FILTER records where any of the following are true (case-insensitive):
+- process_name equals ""sdelete.exe"" or ""sdelete64.exe""
+- original_file_name equals ""sdelete.exe"" or ""sdelete64.exe""
+- process_path ends with ""\sdelete.exe"" or ""\sdelete64.exe"" (or corresponding Unix-style separators)
+- command_line contains ""sdelete.exe"" or ""sdelete64.exe""
+
+| PARSE and RETAIN fields relevant to process execution and attribution, including:
+- host
+- user, user_id
+- action
+- vendor_product
+- process_name
+- process_path (image path)
+- command_line (full process invocation)
+- process_id
+- process_guid
+- process_hash
+- process_integrity_level
+- original_file_name
+- parent_process_name
+- parent_process_path
+- parent_process (full parent command line if available)
+- parent_process_id
+- parent_process_guid
+- parent_process_exec (parent command interpreter, if provided)
+- process_exec (command interpreter, if provided)
+- timestamp
+
+| GROUP records by the following attributes to form distinct execution instances:
+- action
+- host
+- original_file_name
+- parent_process
+- parent_process_exec
+- parent_process_guid
+- parent_process_id
+- parent_process_name
+- parent_process_path
+- process (full command line if available)
+- process_exec
+- process_guid
+- process_hash
+- process_id
+- process_integrity_level
+- process_name
+- process_path
+- user
+- user_id
+-"
+Linux Auditd Possible Append Cronjob Entry On Existing Cronjob File,
+Windows Impair Defense Disable Realtime Signature Delivery,"SEARCH registry modification events from endpoint telemetry (e.g., Sysmon Event ID 13)
+| PARSE fields: event_time, action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, user, status, vendor_product
+| FILTER registry_path contains ""\Windows Defender\Signature Updates\RealtimeSignatureDelivery""
+| FILTER registry_value_data equals ""0x00000000""
+| GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| COMPUTE count = number of events per group, firstTime = earliest event_time in group,"
+Windows MSC EvilTwin Directory Path Manipulation,
+Linux Auditd Data Transfer Size Limits Via Split,"SEARCH Linux Auditd Execve telemetry events | FILTER events where execve_command contains the substring ""split"" AND also contains the substring ""-b "" (indicating a byte-size split option) | DERIVE dest = host, process_name = comm, process = exe | GROUP events BY dest, execve_command, argc | COMPUTE count = number of events in each group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group | FORMAT firstTime and lastTime into human-readable time strings | APPLY environment-specific allowlists or suppression rules to reduce known-good or noisy cases | OUTPUT dest, execve_command, argc, count, firstTime, lastTime, formatted_firstTime, formatted_lastTime"
+Detect Outlook exe writing a zip file,"SEARCH process execution events
+| FILTER process_name equals ""outlook.exe""
+| GROUP BY 5-minute time window, process_id, parent_process_id, dest, process_name, parent_process_name, user
+| COMPUTE firstTime = earliest event_time in group, lastTime = latest event_time in group
+| RENAME process_id -> malicious_id, parent_process_id -> outlook_id
+| JOIN INNER ON malicious_id WITH [
+  SEARCH file system create/write events
+  | FILTER file_path contains "".zip"" OR file_name ends with "".lnk""
+  | FILTER file_path starts with ""C:\Users"" OR file_path contains ""Local\Temp""
+  | GROUP BY 5-minute time window, process_id, file_hash, dest
+  | COMPUTE file_path = distinct list of file paths in group, file_name = distinct list of file names in group, count = number of events in group
+  | RENAME process_id -> malicious_id
+  | PROJECT malicious_id, dest, file_path, file_name, file_hash, count
+]
+| FILTER file_name is not empty
+| PROJECT firstTime, lastTime, user, malicious_id, outlook_id, process_name, parent_process_name, file_name, file_path
+| OUTPUT results"
+Windows Process Injection In Non-Service SearchIndexer,
+Windows Impair Defense Disable Win Defender Network Protection,"SEARCH registry value set events from endpoint telemetry (e.g., Sysmon Event ID 13) within the desired time range
+| PARSE each event to extract: timestamp, host, user, process_guid, process_id, action, status, vendor_product, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data
+| FILTER events where registry_path contains ""Windows Defender\Windows Defender Exploit Guard\Network Protection\EnableNetworkProtection""
+| FILTER events where registry_value_data equals ""0x00000000""
+| GROUP events BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product
+| COMPUTE count = number of events per group, firstTime = earliest timestamp per group, lastTime = latest timestamp per group
+| DERIVE firstTime_readable and lastTime_readable as human-readable timestamps from firstTime and lastTime
+| APPLY environment-specific allowlist or suppression rules if available
+| OUTPUT action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product, count, firstTime_readable, lastTime_readable"
+Dump LSASS via comsvcs DLL,
+GetDomainComputer with PowerShell,
+Linux File Creation In Profile Directory,"SEARCH filesystem activity logs from Linux endpoints that include event timestamp, host, file path, file name, file times, file hash, file size, file ACL, process identifiers, user, and product metadata |
+FILTER events where file_path contains ""/etc/profile.d/"" |
+PARSE fields: timestamp, host, action, file_path, file_name, file_access_time, file_create_time, file_modify_time, file_hash, file_size, file_acl, process_guid, process_id, user, vendor_product |
+GROUP events BY action, host, file_access_time, file_create_time, file_modify_time, file_hash, file_name, file_path, file_acl, file_size, process_guid, process_id, user, vendor_product |
+COMPUTE event_count = number of events in each group; firstTime = minimum timestamp in group; lastTime = maximum timestamp in group |
+FORMAT firstTime and lastTime as human-readable timestamps |
+APPLY FILTER to exclude known benign paths, hosts, users, or processes (allowlist) if available |
+OUTPUT action, host, file_access_time, file_create_time, file_modify_time, file_hash, file_name, file_path, file_acl, file_size, process_guid, process_id, user, vendor_product, event_count, firstTime, lastTime"
+Linux Install Kernel Module Using Modprobe Utility,"SEARCH endpoint process execution events within the desired time range
+| PARSE fields: event_time, action, host, process.name, process.command_line, process.executable, process.path, process.guid, process.pid, process.hash, process.integrity_level, original_file_name, parent.name, parent.command_line, parent.executable, parent.path"
+BITS Job Persistence,"SEARCH process creation/start events from:
+- Windows Sysmon (Event ID 1)
+- Windows Security (Event ID 4688)
+- EDR process telemetry (e.g., CrowdStrike ProcessRollup2)
+within the desired time range
+
+| FILTER events to those where the process executable name or original file name equals ""bitsadmin.exe"" (case-insensitive)
+
+| FILTER events where the full command line contains any of the following BITS job control arguments (case-insensitive): ""create"", ""addfile"", ""setnotifyflags"", ""setnotifycmdline"", ""setminretrydelay"", ""setcustomheaders"", ""resume""
+
+| GROUP events by:
+- host/device
+- user and user_id (if present)
+- process: name, path, id, guid, hash, integrity level, command_line
+- original_file_name (if present)
+- parent process: name, path, id"
+Wermgr Process Spawned CMD Or Powershell Process,
+WinRAR Spawning Shell Application,
+Suspicious Rundll32 dllregisterserver,"SEARCH process execution events from:
+- Sysmon Event ID 1
+- Windows Security 4688
+- EDR/Endpoint process telemetry (e.g., CrowdStrike ProcessRollup2)
+|
+FILTER events to those representing a process start/create action
+|
+FILTER where process image name or original file name equals ""rundll32.exe"" (case-insensitive), or executable path ends with ""\rundll32.exe""
+|
+FILTER where process command line contains the string ""dllregisterserver"" (case-insensitive)
+|
+GROUP events by:
+- device/host
+- action
+- user and user identifier
+- process image name
+- process executable path
+- process command line
+- process identifier (PID)
+- process GUID (if available)
+- process hash (if available)
+- process integrity level (if available)
+- parent process image name
+- parent process executable path
+- parent process command line (if available)
+- parent process identifier (PID)
+- parent process GUID (if available)
+- vendor/product source
+|
+COMPUTE for each group:
+- event_count = number of events
+- first_seen_time = minimum event timestamp
+- last_seen_time = maximum event timestamp
+|
+DERIVE first_seen_time_readable and last_seen_time_readable from first_seen_time and last_seen_time (human-readable format)
+|
+APPLY optional allowlist/suppression to remove known benign rundll32 registrations (e.g., approved installers or signed administrative tooling)
+|
+OUTPUT the grouped fields plus event_count, first_seen_time, last_seen_time, first_seen_time_readable, last_seen_time_readable"
+Windows Default Group Policy Object Modified with GPME,
+Remcos RAT File Creation in Remcos Folder,
+Windows Data Destruction Recursive Exec Files Deletion,"SEARCH events from Sysmon data source | FILTER events where event_identifier is 23 OR 26 | FILTER events where target_file_name ends with .exe OR .sys OR .dll | DERIVE time_bucket as event_time rounded down to 2-minute intervals | GROUP events BY time_bucket, action, dest, dvc, signature, signature_id, user, user_id, vendor_product | COMPUTE event_count, earliest event_time as firstTime, latest event_time as lastTime, distinct file_path set, distinct file_hash set, distinct file_name set, distinct file_modify_time set, distinct process_name set, distinct process_path set, distinct process_guid set, distinct process_id set, distinct process_exec set | FILTER groups where event_count >= 100 | FORMAT firstTime and lastTime as human-readable timestamps | FILTER out groups matching environment-specific allowlists of known benign deletion activity (if available) | OUTPUT time_bucket, action, dest, dvc, signature, signature_id, user, user_id, vendor_product, event_count, firstTime, lastTime, file_path, file_hash, file_name, file_modify_time, process_name, process_path, process_guid, process_id, process_exec"
+Windows Debugger Tool Execution,"SEARCH endpoint process execution events within the desired time range
+| FILTER records where process_name equals any of [""x32dbg.exe"", ""x64dbg.exe"", ""windbg.exe""]
+| GROUP records by action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE first_seen_time = minimum(event_time) and last_seen_time = maximum(event_time) per group
+| FORMAT first_seen_time and last_seen_time as human-readable timestamps
+| APPLY optional allowlist exclusions to remove groups associated with known legitimate debugger usage (e.g., by host, user, process_path, parent_process_name, or signed vendor)
+| OUTPUT grouped fields along with first_seen_time and last_seen_time"
+Hide User Account From Sign-In Screen,"SEARCH registry value modification events from Windows endpoints (e.g., Sysmon Event ID 13) |
+FILTER events where registry_path contains ""\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\Userlist"" (case-insensitive) |
+FILTER events where registry_value_data indicates DWORD 0 (e.g., equals 0 or equals ""0x00000000"") |
+GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+COMPUTE count_events per group, first_seen_time = minimum event_time, last_seen_time = maximum event_time |
+FILTER out records where registry_value_data is null |
+FORMAT first_seen_time and last_seen_time as human-readable timestamps |
+APPLY optional allowlist to exclude known benign registry modifications (environment-specific) |
+OUTPUT action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product, count_events, first_seen_time, last_seen_time"
+Windows File and Directory Enable ReadOnly Permissions,
+Windows Multiple Invalid Users Failed To Authenticate Using NTLM,"SEARCH Windows Security authentication validation events from Domain Controllers within a defined time window
+| FILTER events where event_code equals 4776
+| FILTER events where authentication_protocol equals ""NTLM""
+| FILTER events where error_code equals ""0xC0000064"" (non-existent username)
+| OPTIONAL FILTER events where workstation_name equals the provided workstation parameter
+| PARSE each event to extract: timestamp, workstation_name (source endpoint), attempted_username, domain_controller, error_code, authentication_protocol
+| GROUP events by workstation_name over the chosen time window and COMPUTE:
+    - unique_invalid_user_count = count of distinct attempted_username
+    - total_failure_events = count of events
+    - time_start = earliest timestamp
+    - time_end = latest timestamp
+    - attempted_usernames = list of distinct attempted_username
+    - domain_controllers = list of distinct domain_controller
+| FILTER groups where unique_invalid_user_count is greater than or equal to 30
+| SORT results by unique_invalid_user_count in descending order
+| FORMAT output to include: workstation_name, unique_invalid_user_count, total_failure_events, attempted_usernames, domain_controllers, authentication_protocol, error_code, time_start, time_end
+| OUTPUT one record per workstation_name that meets the threshold"
+Headless Browser Usage,"SEARCH endpoint process creation telemetry (e.g., Sysmon Event ID 1, Windows Security 4688, EDR process events like CrowdStrike) within the desired time range | FILTER records where process_command_line contains ""--headless"" | FILTER records where process_command_line contains ""--disable-gpu"" | GROUP by action, host, original_file_name, parent_process_command_line, parent_process_executable, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process_command_line, process_executable, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, product | COMPUTE event_count = count(events), first_seen_time = min(event_time), last_seen_time = max(event_time) | FORMAT first_seen_time and last_seen_time as human-readable timestamps | APPLY optional environment-specific exclusions for known legitimate headless automation (e.g., CI/CD or testing frameworks) | OUTPUT the grouped fields with event_count, first_seen_time, and last_seen_time"
+Windows Common Abused Cmd Shell Risk Behavior,"SEARCH risk events dataset containing fields: timestamp, calculated_risk_score, annotations.mitre_attack.mitre_tactic, annotations.mitre_attack.mitre_tactic_id, annotations.mitre_attack.mitre_technique_id, tag, source, risk_object, risk_object_type
+| FILTER records where source matches any of:
+  - ""*Windows Cmdline Tool Execution From Non-Shell Process*""
+  - ""*Windows System Network Config Discovery Display DNS*""
+  - ""*Local Account Discovery With Wmic*""
+  - ""*Windows Group Discovery Via Net*""
+  - ""*Windows Create Local Administrator Account Via Net*""
+  - ""*Windows User Discovery Via Net*""
+  - ""*Icacls Deny Command*""
+  - ""*ICACLS Grant Command*""
+  - ""*Windows Proxy Via Netsh*""
+  - ""*Processes launching netsh*""
+  - ""*Disabling Firewall with Netsh*""
+  - ""*Windows System Network Connections Discovery Netsh*""
+  - ""*Network Connection Discovery With Arp*""
+  - ""*Windows System Discovery Using ldap Nslookup*""
+  - ""*Windows System Shutdown CommandLine*""
+| GROUP records by risk_object, risk_object_type, annotations.mitre_attack.mitre_tactic
+| AGGREGATE for each group:
+  - first_time = minimum(timestamp)
+  - last_time = maximum(timestamp)
+ "
+Unknown Process Using The Kerberos Protocol,
+Delete ShadowCopy With PowerShell,"SEARCH PowerShell Script Block Logging events with event_code = 4104
+| FILTER events where ScriptBlockText contains ""ShadowCopy"" AND (ScriptBlockText contains ""Delete"" OR ScriptBlockText contains ""Remove"")
+| FILL_MISSING values in fields [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with ""unknown""
+| GROUP events BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE count = number of events per group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY suppression filter to exclude known benign patterns (e.g., approved backup/maintenance tools, trusted users, known script paths or signatures)
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, count, firstTime, lastTime"
+Mailsniper Invoke functions,
+Shim Database File Creation,
+Windows Event Triggered Image File Execution Options Injection,"SEARCH Windows Application event logs where EventCode equals 3000
+| PARSE fields needed from each event: event_time, dest, param1, param2
+| DERIVE Process = param1, Exit_Code = param2
+| GROUP records BY Process, Exit_Code, dest
+| COMPUTE count = number of records in group, firstTime = minimum of event_time, lastTime = maximum of event_time
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY optional environment-specific exclusions to remove known-benign Process or Exit_Code values
+| OUTPUT dest, Process, Exit_Code, count, firstTime, lastTime"
+WMI Permanent Event Subscription,"SEARCH events that capture WMI event binding activity from endpoint telemetry
+| FILTER records where EventCode equals 5861 and the event message contains the term ""Binding""
+| PARSE the Message field to extract a new field named consumer as the text immediately following ""Consumer ="" up to the next semicolon or end-of-line
+| FILTER out records where consumer equals NTEventLogEventConsumer=""SCM Event Log Consumer""
+| GROUP records by ComputerName, consumer, and Message and COMPUTE the following: count of records; earliest timestamp as firstTime; latest timestamp as lastTime
+| DERIVE human-readable representations of firstTime and lastTime (e.g., ctime) as firstTime_readable and"
+Windows Service Creation Using Registry Entry,"SEARCH registry modification events within the desired time range from sources that record Windows registry value set operations
+
+PARSE each event to extract: timestamp, action, host/device, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status/result, user, product/source
+
+FILTER events where registry_path contains ""\SYSTEM\CurrentControlSet\Services""
+
+FILTER events where registry_value_name equals ""ImagePath""
+
+FILTER events where registry_value_data is not null
+
+GROUP events by action, host/device, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status/result, user, product/source
+
+COMPUTE for each group: event_count = number of events, first_seen_time = minimum(timestamp), last_seen_time = maximum(timestamp)
+
+FORMAT first_seen_time and last_seen_time into human-readable timestamps
+
+APPLY optional allowlist to exclude known legitimate service ImagePath changes (e.g., approved installers or management tools)
+
+OUTPUT the grouped records with event_count, first_seen_time, last_seen_time, and all grouping fields for investigation"
+Rubeus Kerberos Ticket Exports Through Winlogon Access,"SEARCH endpoint process access events
+| FILTER events"
+Windows LOLBAS Executed Outside Expected Path,
+Windows MSHTA Writing to World Writable Path,"SEARCH endpoint telemetry for file creation/write events from Windows hosts | FILTER where event_id equals 11 (if present) | FILTER where process_image ends with ""\mshta.exe"" (case-insensitive) | FILTER where target_file_path matches any of:
+  - ""*\Windows\Tasks\*""
+  - ""*\Windows\Temp\*""
+  - ""*\Windows\tracing\*""
+  - ""*\Windows\PLA\Reports\*""
+  - ""*\Windows\PLA\Rules\*""
+  - ""*\Windows\PLA\Templates\*""
+  - ""*\Windows\PLA\Reports\en-US\*""
+  - ""*\Windows\PLA\Rules\en-US\*""
+  - ""*\Windows\Registration\CRMLog\*""
+  - ""*"
+Windows Set Account Password Policy To Unlimited Via Net,
+IcedID Exfiltrated Archived File Creation,"SEARCH endpoint file system creation events from hosts within the desired time range
+| FILTER source indicates endpoint file monitoring (e.g., Sysmon) and, if available, event_id equals 11 or operation equals ""file created""
+| FILTER file_path ends with ""passff.tar"" OR file_path ends with ""cookie.tar"" (case-insensitive)
+| GROUP BY host, action, file_access_time, file_create_time, file_modify_time, file_hash, file_name, file_path, file_acl, file_size, process_guid, process_id, user, product
+| COMPUTE count = number of events per group
+| COMPUTE firstTime = earliest event timestamp per group
+| COMPUTE lastTime = latest event timestamp per group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY allowlist to exclude known benign file paths, processes, users, or hosts as defined by the organization
+| OUTPUT firstTime, lastTime, count, host, action, file_path, file_name, file_hash, file_size, file_acl, file_create_time, file_modify_time, file_access_time, process_guid, process_id, user, product"
+Windows Unusual Intelliform Storage Registry Access,"SEARCH Windows Security Event Log entries for object access events where EventCode equals 4663
+| FILTER records where ObjectName contains the registry path segment ""\Software\Microsoft\Internet Explorer\IntelliForms\Storage2"" (case-insensitive)
+| FILTER records where ProcessName is not one of [""C:\Program Files\Internet Explorer\iexplore.exe"", ""C:\Windows\System32\dllhost.exe"", ""C:\Windows\SysWow64\dllhost.exe""]
+| GROUP records by ObjectName, ObjectType, ProcessName, AccessMask, process_id, EventCode, Computer, Caller"
+Detect Baron Samedit CVE-2021-3156 Segfault,"SEARCH Linux operating system and application logs within the selected time window
+| FILTER events where the event payload contains the term ""sudoedit""
+| FILTER events where the event payload contains the term ""segfault""
+| GROUP events by host
+| COMPUTE for each host: event_count = number of events, firstTime = earliest event timestamp, lastTime = latest event timestamp
+| FILTER groups where event_count > 5
+| APPLY environment-specific allowlist or suppression rules to exclude known benign hosts or patterns (if defined)
+| OUTPUT host, event_count, firstTime, lastTime"
+Windows Modify Registry Do Not Connect To Win Update,"SEARCH registry modification events from endpoint telemetry (e.g., Sysmon Event ID 13) within the desired time range
+| PARSE fields: timestamp, host, user, action, process_id, process_guid, process_name, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, vendor_product
+| FILTER action indicates a registry value was created or modified
+| FILTER registry_path ends with ""\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\DoNotConnectToWindowsUpdateInternetLocations""
+| FILTER registry_value_data equals ""0x00000001"" OR equals integer 1
+| GROUP BY host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, action, status, user, vendor_product
+| COMPUTE event_count = count(), first_seen_time = min(timestamp), last_seen_time = max(timestamp)
+| FORMAT first_seen_time, last_seen_time as human-readable timestamps
+| APPLY environment-specific filters to exclude known legitimate changes (optional)
+| OUTPUT event_count, first_seen_time, last_seen_time, host, process_guid, process_id, process_name, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, action, status, user, vendor_product"
+WMIC XSL Execution via URL,SEARCH
+Powershell Disable Security Monitoring,
+Windows Computer Account With SPN,
+Windows DISM Remove Defender,
+Linux Auditd Stop Services,"SEARCH events from Linux Auditd data source | FILTER events where event.type equals ""SERVICE_STOP"" | PARSE fields needed for analysis (host, pid, comm, exe, timestamp) | GROUP records by host, pid, comm, exe, event.type | COMPUTE event_count = count of records per group, firstTime = earliest timestamp per group, lastTime = latest timestamp per group | DERIVE firstTime_readable and lastTime_readable by converting firstTime and lastTime to human-readable format | FILTER out groups matching environment-specific allowlists or known benign service stops (if defined) | OUTPUT host, pid, comm, exe, event.type, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Processes launching netsh,
+Windows Modify Registry LongPathsEnabled,"SEARCH events from endpoint registry modification telemetry (e.g., Windows Sysmon registry value set events)
+| FILTER where registry_path contains ""\CurrentControlSet\Control\FileSystem\LongPathsEnabled""
+| FILTER where registry_value_data equals ""0x00000001""
+| GROUP by action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| COMPUTE count = number of events per group, firstTime = earliest event_time in group, lastTime = latest event_time in group
+| COMPUTE firstTime_readable = convert_time(firstTime), lastTime_readable = convert_time(lastTime)
+| APPLY optional environment-specific suppression to remove known benign modifications (e.g., approved baseline changes)
+| OUTPUT action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product, count, firstTime, lastTime, first"
+Detect Renamed PSExec,"SEARCH process-creation events from endpoint telemetry (e.g., Sysmon Event ID 1, Windows Security Event ID 4688, EDR process data) selecting fields: timestamp, action, destination_host, user, user_id, process_name, process_path, process_id, process_guid, process_hash, process_integrity_level, process_command_line, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_command_line, vendor_product
+| FILTER original_file_name equals ""psexec.c""
+| FILTER process_name is not ""psexec.exe"" AND process_name is not ""psexec64.exe""
+| GROUP BY action, destination_host, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_command_line, process_name, process_path, process_id, process_guid, process_hash, process_integrity_level, process_command_line, user, user_id, vendor_product
+| COMPUTE count = number of events in group, first_time = earliest timestamp in group, last_time = latest timestamp in group
+| DERIVE first_time_readable and last_time_readable from first_time and last_time
+| APPLY environment-specific exclusions (e.g., approved admin tools, known-good paths or hashes, sanctioned IT accounts, expected management hosts)
+| OUTPUT action, destination_host, original_file_name, process_name, process_path, process_id, process_guid, process_hash, process_integrity_level, process_command_line, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_command_line, user, user_id, vendor_product, count, first_time, last_time, first_time_readable, last_time_readable"
+Icacls Deny Command,
+Get WMIObject Group Discovery with Script Block Logging,"SEARCH PowerShell Script Block Logging events (EventCode 4104) |
+FILTER records where ScriptBlockText contains ""Get-WMIObject"" |
+FILTER records where ScriptBlockText contains ""Win32_Group"" |
+IMPUTE missing values in fields [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with empty strings |
+GROUP BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText AGGREGATE count() as event_count, min(timestamp) as firstTime, max(timestamp) as lastTime |
+DERIVE firstTime_readable = convert_epoch_to_readable(firstTime), lastTime_readable = convert_epoch_to_readable(lastTime) |
+APPLY FILTER to exclude known benign or authorized activity based on environment-specific allowlists (e.g., trusted hosts, service accounts, scheduled jobs) |
+OUTPUT event_count, firstTime, lastTime, firstTime_readable, lastTime_readable, dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText"
+Windows AD Suspicious Attribute Modification,
+Windows AD GPO New CSE Addition,
+Windows IIS Components Get-WebGlobalModule Module Query,"SEARCH PowerShell execution logs (e.g., script block, module, or process command-line events) within the desired time range
+| FILTER events where the executed command or script content contains the string ""Get-WebGlobalModule"" (case-insensitive)
+| FILTER to include only successful/invoked command events if a status/level field is available
+| PARSE the following fields from each event:
+  - host (machine where the command executed)
+  - module_name (IIS module name; from a field named ""name"" or extracted from command/output)
+  - module_image_path (DLL image path; from a field named ""image"" or extracted from command/output)
+  - event_time (event timestamp)
+| GROUP events BY host, module_name, module_image_path
+| COMPUTE occurrences = count of events per group, first_seen = earliest event_time in group, last_seen = latest event_time in group
+| DERIVE first_seen_readable and last_seen_readable as human-readable representations of first_seen and last_seen
+| RENAME host TO dest
+| FILTER out groups matching environment-specific allowlists (e.g., approved admin activity, known maintenance scripts, trusted accounts/hosts) if available
+| FORMAT output to include: dest, module_name, module_image_path, occurrences, first_seen, last_seen, first_seen_readable, last_seen_readable
+| OUTPUT the formatted results"
+Windows Credentials in Registry Reg Query,
+Windows SQL Server Critical Procedures Enabled,"SEARCH Windows Application event logs where EventCode equals 15457 |
+PARSE EventData_Xml to extract, in order, config_name (first <Data> element), new_value (second <Data> element), and old_value (third <Data> element) |
+FILTER records where config_name is one of [""Ad Hoc Distributed Queries"", ""external scripts enabled"", ""Ole Automation Procedures"", ""clr enabled"", ""clr strict security""] |
+DERIVE dest = host |
+DERIVE change_type = ""enabled"" if old_value == ""0"" and new_value == ""1""; ""disabled"" if old_value == ""1"" and new_value == ""0""; otherwise ""modified"" |
+COMPUTE risk_score = 90 if change_type == ""enabled""; 60 if change_type == ""disabled""; otherwise 70 |
+COMPUTE risk_message = ""SQL Server critical procedure "" + config_name + "" was "" + change_type + "" on host "" + dest + "", which may indicate attempts to gain code execution or perform reconnaissance"" |
+GROUP BY dest, EventCode, config_name, change_type, risk_message, risk_score AGGREGATE count = number of records, firstTime = earliest event time, lastTime = latest event time |
+FORMAT firstTime and lastTime as human-readable timestamps |
+OUTPUT dest, EventCode, config_name, change_type, risk_message, risk_score, count, firstTime, lastTime"
+Windows Impair Defense Disable Win Defender Gen reports,"SEARCH registry modification telemetry (e.g., Windows registry value set/write events) from Windows endpoints within the desired time range
+| FILTER registry_path contains the case-insensitive substring ""\Windows Defender\Reporting\DisableGenericRePorts""
+| FILTER registry_value_data equals ""0x00000001"" OR registry_value_data equals 1
+| SELECT event_time, action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product AGGREGATE count_events = COUNT(), firstTime = MIN(event_time), lastTime = MAX(event_time)
+| DERIVE firstTime_readable = CONVERT_TIME(firstTime), lastTime_readable = CONVERT_TIME(lastTime)
+| APPLY environment-specific suppression rules to exclude known benign or authorized configuration changes (if available)
+| OUTPUT action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product, count_events, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Schtasks scheduling job on remote system,"SEARCH process creation events from Sysmon Event ID 1, Windows Security Event ID 4688, and EDR process telemetry (e.g., CrowdStrike process events)
+| FILTER events where process_name equals ""schtasks.exe"" OR original_file_name equals ""schtasks.exe""
+| FILTER events where process_command_line contains the substring ""/create"" (case-insensitive)
+| FILTER events where process_command_line contains the pattern ""/"
+Cisco NVM - MSHTML or MSHTA Network Execution Without URL in CLI,"SEARCH Cisco Network Visibility Module Flow Data
+| FILTER events where either:
+  - process_name equals ""mshta.exe"" AND process_arguments contains any of [""javascript"", ""vbscript""]
+  OR
+  - process_name equals ""rundll32.exe"" AND process_arguments contains all of [""mshtml"", ""RunHTMLApplication""]
+| FILTER events where process_arguments does not contain any of [""http://"", ""https://""]
+| GROUP BY src, dest, parent_process_path, parent_process_integrity_level, process_path, process_name, process_integrity_level, process_id, transport
+  AGGREGATE:
+  - COUNT events as count
+  - MIN timestamp as firstTime
+  - MAX timestamp as lastTime
+  - COLLECT UNIQUE parent_process_arguments as parent_process_arguments
+  - COLLECT UNIQUE process_arguments as process_arguments
+  - COLLECT UNIQUE parent_process_hash as parent_process_hash
+  - COLLECT UNIQUE process_hash as process_hash
+  - COLLECT UNIQUE module_name_list as module_name_list
+  - COLLECT UNIQUE module_hash_list as module_hash_list
+  - COLLECT UNIQUE dest_port as dest_port
+  - COLLECT UNIQUE aliul as additional_logged_in_users_list
+  - COLLECT UNIQUE dest_hostname as dest_hostname
+| DERIVE firstTime"
+Windows Snake Malware File Modification Crmlog,"SEARCH endpoint file system activity events within the desired time range |
+FILTER events where file_path contains the directory segment ""windows\registration"" (case-insensitive) AND file_name ends with "".crmlog"" |
+SELECT fields: action, host, file_access_time, file_create_time, file_modify_time, file_hash, file_name, file_path, file_acl, file_size, process_guid, process_id, user, vendor_product, event_time |
+GROUP by action, host, file_access_time, file_create_time, file_modify_time, file_hash, file_name, file_path, file_acl, file_size, process_guid, process_id, user, vendor_product |
+COMPUTE event_count = count of events per group, first_seen_time = minimum(event_time) per group, last_seen_time = maximum(event_time) per group |
+FORMAT first_seen_time and last_seen_time as human-readable timestamps |
+APPLY optional allowlist to exclude known benign file paths, file names, processes, or hosts if available |
+OUTPUT grouped fields with event_count, first_seen_time, and last_seen_time for investigation"
+PowerShell Invoke CIMMethod CIMSession,
+Windows Password Policy Discovery with Net,"SEARCH process creation events from endpoint telemetry (e.g., Windows Sysmon process create, Windows Security process create, EDR process events) with fields: timestamp, host, user, user_id, vendor_product, action_status, process_name, original_file_name, executable_path, command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_executable_path, parent_process_id, parent_process_guid
+
+FILTER events where any of the following is true (case-insensitive):
+- process_name equals ""net.exe""
+-"
+PaperCut NG Suspicious Behavior Debug Log,
+Domain Group Discovery With Dsquery,"SEARCH process execution events from Sysmon Event ID 1, Windows Security 4688, and EDR process telemetry within the requested time range
+| PARSE fields needed for analysis: event_time, action, device_hostname, vendor_product, original_file_name, process_name, process_command_line, process_executable_path, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_process_executable_path, parent_process_id, parent_process_guid, user_name, user_id
+| FILTER process_name equals ""dsquery.exe""
+| FILTER process_command_line contains substring ""group"" (case-insensitive)
+| GROUP BY action, device_hostname, vendor_product, original_file_name, parent_process_name, parent_process_path, parent_process_executable_path, parent_process_id, parent_process_guid, process_name, process_command_line, process_executable_path, process_id, process_guid, process_hash, process_integrity_level, user_name, user_id
+| COMPUTE event_count = count(), first_seen_time = min(event_time), last_seen_time = max(event_time)
+| FORMAT first_seen_time and last_seen_time as human-readable timestamps
+| OUTPUT all group-by fields plus event_count, first_seen_time, last_seen_time"
+Excessive Usage Of Taskkill,
+Linux Disable Services,
+Windows Remote Services Allow Rdp In Firewall,
+Windows Disable LogOff Button Through Registry,
+Certutil exe certificate extraction,"SEARCH process creation telemetry from endpoint and EDR sources (e.g., Windows Sysmon process start, Windows Security 4688, EDR process events) within the desired time range
+| FILTER events to those representing a process start action (if an action/type field exists)
+| FILTER where process_name equals ""certutil.exe"" (case-insensitive) OR process_path ends with ""\certutil.exe"" (case-insensitive)
+| FILTER where command_line contains the substring ""-exportPFX"" (case-insensitive)
+| PARSE and retain the following fields for context: host/device, vendor_product, action, timestamp, user, user_id, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_command_line
+| GROUP records by: host/device, vendor_product, action, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_command_line, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, user, user_id
+| COMPUTE event_count = number of records per group, first_seen_time = minimum timestamp per group, last_seen_time = maximum timestamp per group
+| FORMAT first_seen_time and last_seen_time into human-readable timestamps
+| APPLY optional environment-specific allowlists to remove known-benign hosts, users,"
+Crowdstrike User with Duplicate Password,"SEARCH identity risk events from the CrowdStrike identities dataset containing user display names, risk factors, roles, accounts, risk scores, and event timestamps | FILTER out records where primaryDisplayName contains the substring ""admin"" | PARSE and FLATTEN nested arrays to extract fields: riskFactors[].severity -> severity, riskFactors[].type -> risk_type, roles[].type -> role_type, accounts[].domain -> domain, accounts[].dn -> dn, accounts[].samAccountName -> user; retain primaryDisplayName, riskScore, riskScoreSeverity, and event_time | GROUP records by domain, dn, primaryDisplayName, risk_type, severity, riskScore, riskScoreSeverity, user, role_type | COMPUTE for each group: total_events = count of records, firstTime = minimum(event_time), lastTime = maximum(event_time) | FILTER groups where risk_type equals ""DUPLICATE_PASSWORD"" | FORMAT firstTime and lastTime into human-readable timestamps | APPLY environment-specific suppression rules to exclude known benign users/domains if available | OUTPUT domain, dn, primaryDisplayName, user, role_type, risk_type, severity, riskScore, riskScoreSeverity, total_events, firstTime, lastTime"
+Disabling Windows Local Security Authority Defences via Registry,"SEARCH Windows registry activity events from endpoint telemetry (e.g., events that record registry set/delete operations) |
+FILTER events where registry_action IN [""deleted"", ""unknown""] |
+FILTER events where registry_path matches any of:
+  - ""*\SYSTEM\CurrentControlSet\Control\Lsa\LsaCfgFlags""
+  - ""*\SYSTEM\CurrentControlSet\Control\Lsa\RunAsPPL""
+  - ""*\SOFTWARE\Policies\Microsoft\Windows\DeviceGuard\*"" |
+PARSE fields from each remaining event: event_time, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+GROUP events BY dest, process_guid, process_id, registry_action, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+COMPUTE earliest_event_time = MIN(event_time), latest_event_time = MAX(event_time), event_count = COUNT() for each group |
+FORMAT earliest_event_time and latest_event_time into human-readable timestamps"
+Windows User Disabled Via Net,
+Windows Unusual Count Of Users Failed To Auth Using Kerberos,
+Windows AD Abnormal Object Access Activity,
+Allow Operation with Consent Admin,"SEARCH endpoint registry modification events (e.g., Windows registry value set/update) within the desired time range
+| PARSE fields: timestamp, host, user, action, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status
+| FILTER registry_path contains ""\Microsoft\Windows\CurrentVersion\Policies\System""
+| FILTER registry_value_name equals ""ConsentPromptBehaviorAdmin""
+| FILTER registry_value_data equals ""0x00000000""
+| GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status, user
+| COMPUTE count = number of events per group
+| COMPUTE first_seen = earliest timestamp per group, last_seen = latest timestamp per group
+| FORMAT first_seen and last_seen as human-readable timestamps
+| APPLY optional environment-specific allowlist to exclude known administrative changes (by host, user, process, or key path)
+| OUTPUT action, host, user, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status, count, first_seen, last_seen"
+Suspicious WAV file in Appdata Folder,
+Allow File And Printing Sharing In Firewall,
+Windows SharePoint Spinstall0 Webshell File Creation,"SEARCH file system activity logs from Windows endpoints (e.g., file creation events) |
+PARSE fields: timestamp, device, user, file_name, file_path, file_create_time, action, process_guid, process_id, product |
+FILTER file_name == ""spinstall0.aspx"" |
+FILTER file_path MATCHES ANY OF [""*\\microsoft shared\\Web Server Extensions\\16\\TEMPLATE\\LAYOUTS*"", ""*\\microsoft shared\\Web Server Extensions\\15\\TEMPLATE\\LAYOUTS*""] |
+GROUP BY device, user, file_create_time, file_name, file_path, action, process_guid, process_id, product |
+COMPUTE event_count = COUNT(), first_seen_time = MIN(timestamp), last_seen_time = MAX(timestamp) |
+DERIVE first_seen_time_readable = CONVERT_TIME(first_seen_time), last_seen_time_readable = CONVERT_TIME(last_seen_time) |
+OUTPUT device"
+Windows Powershell Cryptography Namespace,"SEARCH Windows PowerShell Script Block Logging events from endpoints
+| FILTER event_identifier == 4104
+| FILTER ScriptBlockText contains ""System.Security.Cryptography""
+| FILTER NOT (ScriptBlockText contains ""SHA"" OR ScriptBlockText contains ""MD5"" OR ScriptBlockText contains ""DeriveBytes"")
+| FILL missing values in [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with ""unknown""
+| GROUP BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE event_count = count(), firstTime = min(timestamp), lastTime = max(timestamp)
+| DERIVE firstTime_readable and lastTime_readable from firstTime and lastTime
+| APPLY environment-specific allowlist/suppression filters if available
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, event_count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Linux Auditd Unix Shell Configuration Modification,"SEARCH Linux Auditd events that record file path activity
+| FILTER events where event_type equals ""PATH""
+| FILTER events where file_path is any of:
+  ""/etc/profile"", ""/etc/shells"", ""/etc/profile.d"", ""/etc/bash.bashrc"", ""/etc/bashrc"",
+  ""/etc/zsh/zprofile"", ""/etc/zsh/zshrc"", ""/etc/zsh/zlogin"", ""/etc/zsh/zlogout"",
+  ""/etc/csh.cshrc"", ""/etc/csh.login"",
+  ""/root/.bashrc"", ""/root/.bash_profile"", ""root/.profile"", ""/root/.zshrc"", ""/root/.zprofile"",
+  and any of the following patterns under user home directories:
+    ""/home/*/.bashrc"", ""/home/*/.zshrc"", ""/home/*/.bash_profile"", ""/home/*/.zprofile"",
+    ""/home/*/.profile"", ""/home/*/."
+Curl Download and Bash Execution,
+Windows Audit Policy Excluded Category via Auditpol,
+Detect Exchange Web Shell,"SEARCH filesystem activity events from endpoint telemetry that include at least: event_time, action, host/device identifier, file_path, file_name, file_hash, file_size, file_acl, file_create_time, file_modify_time, file_access_time, process_id, process_guid, user, and vendor/product metadata | FILTER records where file_path matches any of the following path patterns (case-insensitive, directory separator aware): ""*\HttpProxy\owa\auth\*"", ""*\inetpub\wwwroot\aspnet_client\*"", ""*\HttpProxy\OAB\*"" | FILTER records where file_name ends with either "".aspx"" or "".ashx"" | GROUP records by action, host/device, file_access_time, file_create_time, file_hash, file_modify_time, file_name, file_path, file_acl, file_size, process_guid, process_id, user, vendor/product | COMPUTE count = number of records per group; firstTime = minimum event_time within the group; lastTime = maximum event_time within the group | FORMAT firstTime and lastTime into human-readable timestamps |"
+Linux Deletion Of Cron Jobs,"SEARCH filesystem event telemetry for file operation events from Linux hosts | PARSE fields: event_time, action, hostname, file_path, file_name, file_hash, file_size, file_acl, file_access_time, file_create_time, file_modify_time, process_guid, process_id, user, vendor_product | FILTER action equals ""deleted"" | FILTER file_path matches pattern ""^/etc/cron.*"" | GROUP BY action, hostname,"
+Windows KrbRelayUp Service Creation,"SEARCH Windows System event logs for service installation events (Event ID 7045) within the desired time range, collecting fields: timestamp, Computer (host), EventCode, ServiceName, ImagePath, StartType, ServiceType
+| FILTER records where ServiceName equals ""KrbSCM""
+| GROUP records by Computer, EventCode, ImagePath, ServiceName, StartType, ServiceType
+| DERIVE event_count as the number of records per group, first_seen_time as the earliest timestamp per group, last_seen_time as the latest timestamp per group
+| FORMAT first_seen_time and last_seen_time as human-readable timestamps
+| APPLY environment-specific exclusion rules (if any) to remove known benign entries based on fields such as Computer, ImagePath, or ServiceName
+| OUTPUT Computer, EventCode, ImagePath, ServiceName, StartType, ServiceType, event_count, first_seen_time, last_seen_time"
+Windows Powershell Logoff User via Quser,"SEARCH events from Windows PowerShell Script Block Logging where event_id equals 4104
+| FILTER events where script_block_text contains the substring ""quser"" followed later by ""logoff"" within the same script block (case-insensitive)
+| FILL missing values in grouping fields with a placeholder to ensure consistent aggregation across: dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| GROUP events by dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE total_events = count of events per group, firstTime = minimum event_time per group, lastTime = maximum event_time per group
+| DERIVE firstTime_readable = human-readable timestamp from firstTime, lastTime_readable = human-readable timestamp from lastTime
+| APPLY optional allowlist to exclude known-benign hosts, users, script paths, or signatures if defined
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, total_events, firstTime, lastTime, firstTime_readable, lastTime_readable"
+GetDomainComputer with PowerShell Script Block,"SEARCH events from PowerShell Script Block Logging where EventID equals 4104
+| FILTER events where ScriptBlockText contains the substring ""Get-DomainComputer""
+| FILL missing values in fields [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with a placeholder value
+| GROUP events BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE count = number of events per group, firstTime = minimum timestamp per group, lastTime = maximum timestamp per group
+| FORMAT firstTime and lastTime as human-readable datetimes
+| APPLY environment-specific filtering to remove known benign hosts, users, script paths, or script block text patterns if available
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, count, firstTime, lastTime"
+Disable Logs Using WevtUtil,"SEARCH process execution events from endpoint telemetry sources (e.g., Sysmon Process Creation,"
+Esentutl SAM Copy,
+ServicePrincipalNames Discovery with SetSPN,
+Windows Remote Services Rdp Enable,"SEARCH registry modification events from endpoints (e.g., value set/create operations) |
+FILTER records where registry_path contains ""Control\Terminal Server\fDenyTSConnections"" |
+FILTER records where registry_value_data equals ""0x00000000"" |
+GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type,"
+Windows Event Logging Service Has Shutdown,"SEARCH Windows Security event logs
+| FILTER event_id == 1100
+| GROUP BY action, app, change_type, dest, dvc, name, object_attrs, object_category, service, service_name, signature, signature_id, status, subject, vendor_product CALCULATE total_events = COUNT(), first_time = MIN(timestamp), last_time = MAX(timestamp)
+| DERIVE first_time_readable = convert_timestamp_to_readable(first_time), last_time_readable = convert_timestamp_to_readable(last_time)
+| APPLY environment-specific allowlists or suppression rules (e.g., planned system shutdowns, maintenance windows)
+| OUTPUT action, app, change_type, dest, dvc, name, object_attrs, object_category, service, service_name, signature, signature_id, status, subject, vendor_product, total_events, first_time, last_time, first_time_readable, last_time_readable"
+Svchost LOLBAS Execution Process Spawn,"SEARCH process creation events from endpoint and EDR telemetry within the requested time range
+| FILTER"
+Detect Password Spray Attack Behavior From Source,
+Create Remote Thread into LSASS,
+Windows SIP WinVerifyTrust Failed Trust Validation,"SEARCH Windows CryptoAPI (CAPI2) Operational event logs
+| FILTER records where EventID equals 81
+| FILTER records where the event text contains the phrase ""The digital signature of the object did not verify.""
+| PARSE XML from field UserData_Xml into discrete attributes (keep both the raw XML and extracted fields)
+| GROUP records by Computer and the raw UserData_Xml payload
+| COMPUTE for each group: count of records, minimum event time as firstTime, maximum event time as lastTime
+| SELECT Computer, firstTime, lastTime, count, UserData_Xml, and any parsed XML attributes
+| APPLY any environment-specific allowlists or suppression rules if available
+| OUTPUT the resulting grouped records"
+Disable Registry Tool,
+Randomly Generated Windows Service Name,"SEARCH Windows System log events where EventCode equals 7045 |
+PARSE fields: EventCode, ComputerName, Service_Name, Service_Start_Type, Service_Type, Service_File_Name |
+DERIVE entropy_score = ShannonEntropy(Service_Name) |
+FILTER records where entropy_score > 3 |
+SELECT EventCode, ComputerName, Service_Name, entropy_score, Service_Start_Type, Service_Type, Service_File_Name |
+OUTPUT results"
+Windows File and Directory Permissions Remove Inheritance,"SEARCH process creation events from sources: Sysmon Event ID 1, Windows Security Event ID 4688 within the analysis time range
+| PARSE fields from each event: timestamp, host, user, user_id, product, action, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, original_file_name, parent_process_name, parent_process_id, parent_process_path, parent_process_guid
+| FILTER events where process_name is one of [""icacls.exe"", ""cacls.exe"", ""xcacls.exe""]
+| FILTER events where command_line contains the substring ""/inheritance:r"" (case-insensitive)
+| GROUP records by: action, host, original_file_name, parent_process_name, parent_process_id, parent_process_path, parent_process_guid, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, user, user_id, product
+| COMPUTE firstTime = minimum(timestamp) per group, lastTime = maximum(timestamp) per group
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY optional environment-specific allowlists or exclusions to reduce known benign administrative activity
+| OUTPUT for each group: firstTime, lastTime, action, host, original_file_name, parent_process_name, parent_process_id, parent_process_path, parent_process_guid, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, user, user_id, product"
+Detect Renamed 7-Zip,"SEARCH process execution events from endpoint telemetry (e.g., Sysmon, Windows Security, EDR) within the desired time range |
+FILTER events where original_file_name matches pattern ""7z*.exe"" (case-insensitive) |
+FILTER events where process_name does NOT match pattern ""7z*.exe"" (case-insensitive) |
+GROUP by process_action, host, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product |
+AGGREGATE count as event_count, minimum event_time as first_seen_time, maximum event_time as last_seen_time |
+COMPUTE human_readable_first_seen_time from first_seen_time, human_readable_last_seen_time from last_seen_time |
+APPLY optional environment-specific allowlists to exclude known benign renamed 7-Zip executions (e.g., by file path, hash, signer, or host) |
+OUTPUT event_count, first_seen_time, last_seen_time, human_readable_first_seen_time, human_readable_last_seen_time, and all grouped context fields"
+Windows AD AdminSDHolder ACL Modified,
+Suspicious IcedID Rundll32 Cmdline,"SEARCH endpoint process execution events within the analysis time range
+
+FILTER events where process_name equals ""rundll32.exe"" OR original_file_name equals ""rundll32.exe"" (case-insensitive)
+
+FILTER events where process_command_line contains the argument pattern ""/i:"" followed by any value (case-insensitive)
+
+PARSE the following fields from remaining"
+Windows Cisco Secure Endpoint Unblock File Via Sfc,
+Windows AD Domain Controller Audit Policy Disabled,
+GetLocalUser with PowerShell,"SEARCH endpoint process creation/execution events from data sources: Sysmon Event ID 1, Windows Security 4688, and EDR process telemetry (e.g., CrowdStrike ProcessRollup2) |
+FILTER events where process_name equals ""powershell.exe"" (case-insensitive) |
+FILTER events where process command line contains ""Get-LocalUser"" (case-insensitive) |
+GROUP events BY action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product |
+COMPUTE count of events per group; firstTime as the earliest event_time per group; lastTime as the latest event_time per group |
+FORMAT firstTime and lastTime as human-readable timestamps |
+OUTPUT all group-by fields plus count, firstTime, lastTime"
+Windows File Transfer Protocol In Non-Common Process Path,"SEARCH Windows Sysmon network connection events where event_id = 3
+| PARSE fields: event_time, action, app, dest, dest_ip, dest_port, direction, dvc, protocol, protocol_version, src, src_ip, src_port, transport, user, vendor_product, process_name, process_exec, process_guid, process_id, destination_port_name
+| FILTER (destination_port_name = ""ftp"" OR dest_port = 21)
+| DERIVE process_path_lower = LOWER(process_exec)
+| FILTER process_path_lower does NOT match any of: ""*\program files*"", ""*\windows\system32\*"", ""*\windows\syswow64\*"" (case-insensitive)
+| GROUP BY action, app, dest, dest_ip, dest_port, direction, dvc, protocol, protocol_version, src, src_ip, src_port, transport, user, vendor"
+Detect AzureHound Command-Line Arguments,"SEARCH process execution telemetry from endpoint and OS audit logs (e.g., Sysmon, Windows Security 4688, EDR) |
+FILTER events where process_command_line contains the substring ""invoke-azurehound"" (case-insensitive) |
+GROUP events by action, host, original_file_name, parent_process_command_line, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process_command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product |
+COMPUTE event_count = count of events per group, first_seen_time = minimum event_time per group, last_seen_time = maximum event_time per group |
+DERIVE first_seen_time_readable and last_seen_time_readable from first_seen_time and last_seen_time |
+APPLY organization_defined_exclusions to remove known benign or test activity |
+OUTPUT all grouping fields plus event_count, first_seen_time_readable, last_seen_time_readable"
+Linux Auditd Sysmon Service Stop,"SEARCH events from the Linux Auditd Service Stop data source
+| FILTER records where field ""type"" equals ""SERVICE_STOP""
+| FILTER records where field ""unit"""
+Windows Modify Registry DontShowUI,"SEARCH registry modification events from endpoint telemetry (e.g., Windows registry value set/create events) with fields: timestamp, host, user, process_id, process_guid, action/operation, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, vendor_product
+| FILTER registry_path contains ""\SOFTWARE\Microsoft\Windows\Windows Error Reporting\DontShowUI"" (case-insensitive)
+| FILTER registry_value_data equals 0x00000001 or equals 1
+| FILTER action/operation indicates a modification (e.g., SetValue, CreateValue, Write) if such a field exists
+| GROUP BY host, process_guid, process_id, action/operation, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| COMPUTE event_count = count(), firstTime = min(timestamp), lastTime = max(timestamp)
+| DERIVE firstTime_readable = format_timestamp(firstTime), lastTime_readable = format_timestamp(lastTime)
+| OUTPUT event_count, firstTime, lastTime, first"
+Windows Modify Registry Regedit Silent Reg Import,
+Windows DisableAntiSpyware Registry,"SEARCH endpoint registry value modification events from Windows hosts (e.g., data capturing registry value set operations) | FILTER records where registry_value_name equals ""DisableAntiSpyware"" | FILTER records where registry_value_data equals ""0x00000001"" | GROUP events by action, destination_host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product | COMPUTE count_of_events per group, firstTime as minimum event_time per group, lastTime as maximum event_time per group | FORMAT firstTime and lastTime as human-readable timestamps | SELECT destination_host, action, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product, count_of_events, firstTime, lastTime | APPLY optional environment-specific allowlists or suppression rules to remove known legitimate changes | OUTPUT aggregated results per group"
+Windows Server Software Component GACUtil Install to GAC,"SEARCH process creation telemetry from EDR agents and Windows process start logs
+| FILTER event_type equals ""process_start"" (if such a field exists)
+| FILTER process_name equals ""gacutil.exe"" (case-insensitive)
+| FILTER command_line contains an install flag for GAC: match either "" -i "" or "" /i "" (case-insensitive; ensure flag is tokenized by whitespace or start-of-line)
+| GROUP BY action, host, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_exec, command_line, process_exec_path, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE event_count = count(), first_seen_time = min(event_time), last_seen_time = max(event_time)
+| DERIVE first_seen_time_readable = format_timestamp(first_seen_time), last_seen_time_readable = format_timestamp(last_seen_time)
+| APPLY environment-specific allowlist/suppression to exclude known administrative or build-server use of gacutil
+| OUTPUT host, process_name, command_line, event_count, first_seen_time, last_seen_time, first_seen_time_readable, last_seen_time_readable, action, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_exec, process_exec_path, process_guid, process_hash, process_id, process_integrity_level, process_path, user, user_id, vendor_product"
+Windows Autostart Execution LSASS Driver Registry Modification,
+Wbemprox COM Object Execution,"SEARCH Sysmon module-load events (Event ID 7) |
+FILTER events where the loaded module path (ImageLoaded) case-insensitively ends with any of: ""fastprox.dll"", ""wbemprox.dll"", ""wbemcomn.dll"" |
+FILTER out events where process_name is any of: ""wmiprvse.exe"", ""WmiApSrv.exe"", ""unsecapp.exe"" |
+FILTER out events where the process image path (Image) contains any of the following directory segments (case-insensitive): ""\windows\"", ""\program files"", ""\wbem\"" |
+FILL NULLS with empty string for fields used downstream: Image, ImageLoaded, dest, loaded_file, loaded_file_path, original_file_name, process_exec, process_guid, process_hash, process_id, process_name, process_path, service_dll_signature_exists, service_dll_signature_verified, signature, signature_id, user_id, vendor_product |
+GROUP records BY Image, ImageLoaded, dest, loaded_file, loaded_file_path, original_file_name, process_exec, process_guid, process_hash, process_id, process_name, process_path, service_dll_signature_exists, service_dll_signature_verified, signature, signature_id, user_id, vendor_product and COMPUTE event_count = COUNT(), firstTime = MIN(event_time), lastTime = MAX(event_time) |
+FORMAT firstTime and lastTime as human-readable timestamps |
+APPLY environment-specific exclusion filter to remove known benign patterns (if available) |
+OUTPUT the grouped fields plus event_count, firstTime, lastTime"
+Windows MSIExec Spawn WinDBG,"SEARCH process execution events from endpoint telemetry (e.g., Sysmon Event ID 1, Windows Security 4688, EDR process data) within the desired time range
+| PARSE each event to extract fields: event_time, action, host/dest, user, user_id, vendor_product, process_name, process_path, process_id, process_guid, process_exec (command line), process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process, parent_process_exec, original_file_name
+| FILTER process creation events if an action/type field is available that distinguishes process starts
+| FILTER where parent_process_name equals ""msiexec.exe"" (case-insensitive)
+| FILTER where process_name equals ""windbg.exe"" (case-insensitive)
+| GROUP BY action, host/dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE count = number of events in each group, first_time = earliest event_time in group, last_time = latest event_time in group
+| FORMAT first_time and last_time into human-readable timestamps (retain raw values as well)
+| APPLY optional environment-specific allowlists to exclude known benign cases (e.g., specific hosts, users, or signed/known-good paths)
+| OUTPUT count, first_time, last_time, formatted timestamps, and all grouping fields for investigation"
+Disable Windows SmartScreen Protection,"SEARCH endpoint registry modification events within the selected time range
+| FILTER events where registry_path (case-insensitive) CONTAINS ""\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SmartScreenEnabled"" OR CONTAINS ""\Microsoft\Windows\System\EnableSmartScreen""
+| FILTER events where registry_value_data EQUALS ""Off"" OR EQUALS ""0""
+| SELECT fields: event_time, action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| COMPUTE count_of_events, earliest(event_time) AS firstTime, latest(event_time) AS lastTime
+| DERIVE firstTime_readable FROM firstTime, lastTime_readable FROM lastTime
+| APPLY optional allowlist or suppression rules to remove known benign modifications
+| OUTPUT grouped records with count_of_events, firstTime, lastTime, firstTime_readable, lastTime_readable and all selected fields"
+Detect RTLO In File Name,
+Linux Obfuscated Files or Information Base64 Decode,"SEARCH endpoint process execution events from Linux hosts
+| FILTER process.path ends_with ""/base64"" OR process.name == ""base64""
+| FILTER process.command_line CONTAINS ""-d""
+| GROUP BY action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| COMPUTE count = COUNT(), first_time = MIN(event_time), last_time = MAX(event_time)
+| DERIVE first_time_readable = TO_READABLE_TIME(first_time), last_time_readable = TO_READABLE_TIME(last_time)
+| APPLY EXCLUSION_FILTERS for known benign base64 decode usage (e.g., approved scripts, administrative tools, trusted paths, known service accounts)
+| OUTPUT action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path"
+Linux System Network Discovery,"SEARCH endpoint process creation events from Linux hosts within the analysis period
+| FILTER events where process_name is one of [""arp"", ""ifconfig"", ""ip"", ""netstat"", ""firewall-cmd"", ""ufw"", ""iptables"", ""ss"", ""route""]
+| DERIVE time_bucket as the 30-minute interval start for each event timestamp
+| GROUP events by time_bucket, host (destination device), and user
+| AGGREGATE per group:
+  - count_total_events = total number of events
+  - first_time = earliest event timestamp
+  - last_time = latest event timestamp
+  - process_name_count = distinct count of process_name
+  - process_names = unique list of process_name
+  - actions = unique list of action values (if present)
+  - original_file_names = unique list of original file names (if present)
+  - parent_processes = unique list of parent process command lines (if present)
+  - parent_executables = unique list of parent executable paths (if present)
+  - parent_process_ids = unique list of parent process IDs
+  - parent_process_names = unique list of parent process names
+  - parent_process_paths = unique list of parent process paths
+  - process_command_lines = unique list of process command lines
+  - process_executables = unique list of process executable paths
+  - process_hashes = unique list of process hashes (if present)
+  - process_ids = unique list of process IDs
+  - process_integrity_levels = unique list of integrity levels (if present)
+  - users = unique list of users
+  - user_ids = unique list of user IDs
+| FILTER groups where process_name_count >= 4
+| FORMAT first_time and last_time into human-readable timestamps
+| OUTPUT time_bucket, host, user, process_name_count, process_names, count_total_events, first_time, last_time, and the aggregated process/parent context fields"
+Common Ransomware Extensions,
+Notepad with no Command Line Arguments,"SEARCH process creation events from endpoint and operating system telemetry (e.g., EDR, Sysmon, Windows Security) |
+PARSE fields: event_time, device, user, user_id, vendor_product, action, process_id, process_guid, process_name, process_path, process_exec, process_hash, process_integrity_level, command_line (full process command), original_file_name, parent_process_id, parent_process_guid, parent_process_name, parent_process_path, parent_process (full parent command), parent_process_exec |
+FILTER process_name equals ""notepad.exe"" (case-insensitive) |
+FILTER action is not equal to ""blocked"" (if action field exists) |
+FILTER command_line matches a case-insensitive pattern that ends with ""notepad.exe"" and contains no additional arguments beyond the executable name (allow up to a few trailing non-argument characters such as spaces or quotes) |
+GROUP BY action, device, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, command_line, process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product |
+COMPUTE count = number of events in each group; first_time = minimum event_time; last_time = maximum event_time |
+FORMAT first_time and last_time as human-readable timestamps |
+OUTPUT count, first_time, last_time, and all group-by fields"
+Windows InstallUtil Credential Theft,
+Linux Deletion of SSL Certificate,"SEARCH filesystem activity events
+| FILTER where action equals ""deleted""
+|"
+Windows Network Share Interaction Via Net,"SEARCH process creation events from endpoint telemetry (e.g., Sysmon ProcessCreate, Windows Security 4688, EDR process data) within the desired time range
+| PARSE fields: timestamp, device/host, user, user_id, vendor_product, process_name, original_file_name, image_path, command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_image_path, parent_command_line, parent_process_id, parent_process_guid, action
+| FILTER events where (process_name equals ""net.exe"" OR original_file_name equals ""net.exe"" OR image_path ends with ""\net.exe"") using case-insensitive comparison
+| FILTER events where command_line contains "" use "" OR command_line contains "" view"" using case-insensitive substring match
+| GROUP records by: action, device/host, original_file_name, parent_process_name, parent_image_path, parent_process_id, parent_process_guid, parent_command_line, process_name, image_path, process_id, process_guid, process_hash, process_integrity_level, command_line, user, user_id, vendor_product
+| COMPUTE event_count = number of records in group, first_seen = minimum timestamp in group, last_seen = maximum timestamp in group
+| FORMAT first_seen and last_seen into human-readable timestamps
+| APPLY environment-specific allowlists or exclusions if available (e.g., known administrative scripts or management tools legitimately invoking ""net use"" or ""net view"")
+| OUTPUT the grouped records with fields: first_seen, last"
+GetNetTcpconnection with PowerShell Script Block,"SEARCH PowerShell Script Block Logging events over the selected time range
+| FILTER records where EventID equals 4104
+| FILTER records where ScriptBlockText contains the substring ""Get-NetTcpconnection"" (case-insensitive)
+| FILL missing values for all fields used in grouping with a placeholder to prevent null-related grouping issues
+| GROUP records by dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE count = number of records per group, firstTime = earliest event time in group, lastTime = latest event time in group
+| DERIVE firstTimeReadable = human-readable representation of firstTime, lastTimeReadable = human-readable representation of lastTime
+| APPLY optional allowlist/suppression to exclude known benign hosts, users, scripts, or paths if defined
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, count, firstTime, lastTime, firstTimeReadable, lastTimeReadable"
+Linux Add Files In Known Crontab Directories,"SEARCH filesystem activity events from endpoint telemetry within the desired time range
+| FILTER file_path is under any of the following directories: ""/etc/cron*"" OR ""/var/spool/cron/*""
+| FILTER (if available) event_id equals 11 to focus on file creation events
+| GROUP BY action, dest_host, file_access_time, file_create_time, file_modify_time, file_name, file_path, file_hash, file_acl, file_size, process_guid, process_id, user, vendor_product
+| COMPUTE count = number of events in each group, firstTime = earliest event time in group, lastTime = latest event time in group
+| DERIVE firstTime_readable = human-readable representation of firstTime, lastTime_readable = human-readable representation of lastTime
+| APPLY optional allowlist to"
+GetAdComputer with PowerShell,"SEARCH process-creation events within the selected time range from data sources: [Sysmon Event ID 1], [Windows Security 4688], and [EDR process telemetry such as CrowdStrike ProcessRollup2]
+| FILTER records where process_name equals ""powershell.exe"" (case-insensitive)
+| FILTER records where command_line contains the substring ""Get-AdComputer"" (case-insensitive)
+| SELECT the following fields (if available): event_time, action, dest_host,"
+Windows Excessive Disabled Services Event,
+Disabling Defender Services,"SEARCH registry value modification events from endpoint telemetry
+| PARSE fields: event_time, action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_data, registry_value_type, status, user, vendor_product
+| FILTER (case-insensitive) registry_path contains ""\System\CurrentControlSet\Services\""
+| FILTER (case-insensitive) registry_path contains any of [""WdBoot"", ""WdFilter"", ""WdNisDrv"", ""WdNisSvc"", ""WinDefend"", ""SecurityHealthService""]
+| FILTER registry_value_name equals ""Start""
+| FILTER registry_value_data equals ""0x00000004""
+| GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| COMPUTE count = number_of_events, firstTime = earliest(event_time), lastTime = latest(event_time)
+| FILTER registry_value_data is not null
+| DERIVE firstTime_readable = format_timestamp(firstTime), lastTime_readable = format_timestamp(lastTime)
+| OUTPUT action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product, count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Detect SharpHound Command-Line Arguments,
+Domain Controller Discovery with Nltest,"SEARCH endpoint process creation events from data sources: Sysmon Event ID 1, Windows Security 4688, and EDR process telemetry |
+PARSE fields: timestamp, device, user, user_id, vendor_product, action, process_image_name, original_file_name, process_path, process_command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_id, parent_process_path, parent_process_guid |
+FILTER where process executable name equals ""nltest.exe"" (case-insensitive match against process_image_name/original_file_name or file name portion of process_path) |
+FILTER where process_command_line contains ""/dclist:"" OR contains ""/dsgetdc:"" (case-insensitive) |
+GROUP records by action, device, original_file_name, parent_process_name, parent_process_path, parent_process_guid, parent_process_id, process_command_line, process_path, process_guid, process_hash, process_id, process_integrity_level, process_image_name, user, user_id, vendor_product |
+COMPUTE event_count = number of records per group, first_seen_time = minimum timestamp per group, last_seen_time = maximum timestamp per group |
+DERIVE human_readable_first_seen_time and human_readable_last_seen_time from first_seen_time and last_seen_time |
+APPLY optional allowlist to exclude known legitimate administrative uses (for example, trusted management hosts, approved scripts, or service accounts) |
+OUTPUT one record per group with fields: device, user, user_id, vendor_product, action, process_image_name, original_file_name, process_path, process_command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_id, parent_process_path, parent_process_guid, event_count, first_seen_time, last_seen_time, human_readable_first_seen_time, human_readable_last_seen_time"
+Detect Rundll32 Application Control Bypass - setupapi,
+Linux Data Destruction Command,"SEARCH process creation telemetry from endpoint detection/response data on Linux hosts
+
+| PARSE fields: timestamp, host, action, vendor_product, original_file_name, user, user_id, process_name, process_command_line, process_executable_path, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_executable_path, parent_process_command_line
+
+| FILTER where process_name equals ""rm""
+
+| FILTER where process_command_line contains either "" -rf"" or "" -fr""
+
+| FILTER where process_command_line contains "" --no-preserve-root""
+
+| GROUP records by host, action, vendor_product, original_file_name, user, user_id, process_name, process_executable_path, process_id, process_guid, process_hash, process_integrity_level, process_command_line, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_executable_path, parent_process_command_line
+
+| COMPUTE count = number of records in group, firstTime = minimum timestamp in group, lastTime = maximum timestamp in group
+
+| CONVERT firstTime and lastTime to human-readable time format
+
+| OUTPUT count, firstTime, lastTime, and all group-by fields"
+Windows RDPClient Connection Sequence Events,"SEARCH Windows event records where channel/log name equals ""Microsoft-Windows-TerminalServices-RDPClient/Operational"" AND EventCode equals 1024
+| GROUP records BY host, source,"
+Windows Unusual Count Of Users Fail To Auth Wth ExplicitCredentials,
+Windows WMI Process Call Create,
+Windows Disable Windows Group Policy Features Through Registry,"SEARCH registry modification events from endpoint telemetry or OS audit logs
+| PARSE fields: timestamp, host, action, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| FILTER registry_path contains ""\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\"" OR registry_path contains ""\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\""
+| FILTER registry_value_name IN [""NoDesktop"",""NoFind"",""NoControlPanel"",""NoFileMenu"",""NoSetTaskbar"",""NoTrayContextMenu"",""TaskbarLockAll"",""NoThemesTab"
+Suspicious PlistBuddy Usage,"SEARCH process execution telemetry from endpoint/EDR data within the selected time range
+| FILTER records where process_name equals ""PlistBuddy""
+| FILTER records where process_command_line contains any of [""LaunchAgents"", ""RunAtLoad"", ""true""]
+| GROUP records BY device_id, user, parent_process_name, parent_process_id, process_name, process_command_line, process_id
+| COMPUTE event_count = number of records in each group, first_seen = earliest event_time in group, last_seen = latest event_time in group
+| APPLY optional allowlist/exclusion rules to remove known benign administrative uses of PlistBuddy
+| FORMAT first_seen and last_seen as human-readable timestamps
+| OUTPUT device_id, user, parent_process_name, parent_process_id, process_name, process_command_line, process_id, event_count, first_seen, last_seen"
+Windows Modify Registry WuServer,"SEARCH registry value modification events from endpoint telemetry (e.g., Sysmon Event ID 13) |
+FILTER events where registry_path contains ""\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\WUServer"" |
+PROJECT timestamp, action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+GROUP BY action, dest, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product |
+COMPUTE event_count = count(), firstTime = min(timestamp), lastTime = max(timestamp) |
+FORMAT firstTime, lastTime as human-readable timestamps |
+APPLY allowlist to exclude known benign or expected modifications for this registry path |
+OUTPUT the grouped fields with event_count, firstTime, and lastTime"
+Ryuk Wake on LAN Command,"SEARCH process execution events from Endpoint/EDR telemetry and Windows process creation logs (e.g., Sysmon Event ID 1, Windows Security 4688, EDR process rollups), within the requested time range, collecting process and parent-process attributes, user context, host, and vendor/product identifiers |
+PARSE each event to extract: timestamp, device.hostname, event.action (e.g., process start), vendor.product, process.command_line, process.name, process.path, process.id, process.guid, process.hash, process.integrity_level, process.original_file_name, process.executable, parent_process.name, parent_process.path, parent_process.id, parent_process.guid, parent_process.executable, user.name, user.id |
+FILTER events where process.command_line contains the substring ""8 LAN"" OR contains the substring ""9 REP"" |
+GROUP events by: event.action, device.hostname, vendor.product, process.original_file_name, parent_process.name, parent_process.path, parent_process.id, parent_process.guid, parent_process.executable, process.command_line, process.name, process.path, process.id, process.guid, process"
+Windows Impair Defense Delete Win Defender Context Menu,"SEARCH registry activity events from endpoint telemetry within the desired time window |
+PARSE fields: event_time, host, user, process_id, process_guid, vendor_product, action, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status |
+FILTER where action indicates deletion (e.g., equals ""deleted"") |
+FILTER where registry_path contains ""\shellex\ContextMenuHandlers\EPP"" (case-insensitive substring match) |
+GROUP BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product |
+COMPUTE count = number of events per group, firstTime = minimum(event_time), lastTime = maximum(event_time) |
+DERIVE firstTime_readable and lastTime_readable as human-readable representations of firstTime and lastTime |
+OUTPUT count, firstTime, lastTime, firstTime_readable, lastTime_readable, action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_data, registry_value_name, registry_value_type, status, user, vendor_product"
+Windows Steal Authentication Certificates - ESC1 Abuse,
+Crowdstrike High Identity Risk Severity,"SEARCH CrowdStrike identities events
+| FILTER events where (riskScoreSeverity equals ""HIGH"") OR (riskScore >= 0.70)
+| PARSE nested fields to create simple aliases: riskFactors.severity -> severity, riskFactors.type -> risk_type, roles.type -> role_type, accounts.domain -> domain, accounts.dn -> dn, accounts.samAccountName -> user
+| GROUP events BY domain, dn, primaryDisplayName, risk_type, severity, riskScore, riskScoreSeverity, user, role_type
+| COMPUTE for each group: total_events = count(events), firstTime = minimum(event_timestamp), lastTime = maximum(event_timestamp)
+| FORMAT firstTime and lastTime as human-readable timestamps
+| APPLY optional environment-specific suppression/allowlist filters for known-benign identities or patterns
+| OUTPUT domain, dn, primaryDisplayName, risk_type, severity, riskScore, riskScoreSeverity, user, role_type, firstTime, lastTime, total_events"
+Linux Find Privilege Escalation,"SEARCH process execution telemetry that includes command-line arguments and the following fields: timestamp, action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent_process_id, parent_process_name, parent_process_path, process (full command line), process_exec, process_guid, process_hash, process_id, process_integrity_level, process_name, process_path, user, user_id, vendor_product
+| FILTER records where process contains ""find"" AND process contains ""-exec"" AND process contains ""sudo""
+| GROUP records BY action, dest, original_file_name, parent_process, parent_process_exec, parent_process_guid, parent"
+Windows AD GPO Deleted,
+Regsvr32 with Known Silent Switch Cmdline,"SEARCH process execution telemetry from endpoint data sources (e.g., Sysmon process creation, Windows Security 4688, EDR process rollups), selecting at least: timestamp, host, user, process_name, original_file_name, process_image_path, process_command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, vendor_product |
+FILTER events where the process corresponds to Regsvr32 (case-insensitive), such as:
+- process_name equals ""regsvr32.exe"" OR
+- original_file_name equals ""regsvr32.exe"" OR
+- process_image_path ends with ""\regsvr32.exe"" |
+FILTER events where process_command_line contains a hyphen or slash immediately followed by the letter ""s"" (case-insensitive), indicating the silent switch (examples: ""-s"", ""/s"") |
+GROUP events by host, user, process_name, original_file_name, process_image_path, process_command_line, process_id, process_guid, process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, vendor_product |
+COMPUTE count of events per group, earliest timestamp as firstTime, latest timestamp as lastTime |
+FORMAT firstTime and lastTime into human-readable datetime strings |
+APPLY environment-specific allowlists or suppression rules to exclude known benign Regsvr32 silent usage (if available) |
+OUTPUT the grouped fields along with count, firstTime, and lastTime"
+Windows Rapid Authentication On Multiple Hosts,"SEARCH Windows Security Event Log records for authentication events | FILTER where event_id equals 4624 | FILTER where logon_type equals 3 (network logon) | FILTER where target_username is not ""ANONYMOUS LOGON"" | FILTER where target_username does not end with ""$"" | DERIVE time_bucket by truncating event_time into 5-minute intervals | GROUP BY time_bucket, IpAddress, TargetUserName, action, app, authentication_method, signature, signature_id AGGREGATE unique_targets = count_distinct(Computer), host_targets = list_distinct(Computer), dest = list_distinct(dest), src = list_distinct(src), user"
+Windows Excessive Usage Of Net App,"SEARCH process execution events from endpoint telemetry within the desired time range |
+FILTER where:
+- process name equals ""net.exe"" OR original file name equals ""net.exe"" OR process path ends with ""\net.exe""
+- event/action denotes a process start/creation (if such a field exists) |
+DERIVE time_window = floor(timestamp to 1-minute intervals) |
+GROUP by host/system, user, process name, parent process name, original file name, time_window |
+COMPUTE
+- exec_count = count of events in the group
+- firstTime = minimum timestamp in the group
+- lastTime = maximum timestamp in the group
+- action_list = unique list of event/actions
+- parent_process_list = unique list of parent process full names
+- parent_process_exec_list = unique list of parent process executable paths
+- parent_process_guid_list = unique list of parent process GUIDs
+- parent_process_id_list = unique list of parent process IDs
+- parent_process_path_list = unique list of parent process paths
+- process_list = unique list of process full names
+- process_exec_list = unique list of process executable paths
+- process_guid_list = unique list of process GUIDs
+- process_hash_list = unique list of process hashes
+- process_id_list = unique list of process IDs
+- process_integrity_level_list = unique list of process integrity levels
+- process_path_list = unique list of process paths
+- user_id_list = unique list of user IDs
+- vendor_product_list = unique list of vendor/product identifiers |
+FILTER groups where exec_count >= 10 |
+DERIVE firstTime_readable and lastTime_readable from firstTime and lastTime |
+FILTER out groups matching organization allowlists for known, legitimate high-frequency use of net.exe (e.g., sanctioned admin scripts, maintenance jobs) |
+OUTPUT host/system, user, process name, parent process name, original file name, time_window, exec_count, firstTime, lastTime, firstTime_readable, lastTime_readable, and all computed lists of unique values"
+Windows AD DCShadow Privileges ACL Addition,
+ConnectWise ScreenConnect Path Traversal Windows SACL,"SEARCH Windows Security Audit Log events with event_id = 4663
+| FILTER events where ProcessName path ends with ""ScreenConnect.Service.exe"" (case-insensitive match)
+| FILTER events where file_path contains ""\ScreenConnect\App_Extensions\"" (case-insensitive match)
+| FILTER events where file_name ends with "".aspx"" OR "".ashx"" (case-insensitive match)
+| GROUP records by ObjectName, ObjectType, ProcessName, AccessMask, process_id,"
+Windows IIS Components Add New Module,"SEARCH process creation events from Sysmon Event ID 1, Windows Security 4688, and EDR process telemetry
+| PARSE fields: timestamp, host, vendor_product, action, user, user_id, process_name, process_path, process_exec, process_id, process_guid, process_hash, process_integrity_level, command_line, original_file_name, parent_process_name, parent_process_id, parent_process_guid, parent_process_path, parent_process_exec, parent_process
+| FILTER"
+Suspicious microsoft workflow compiler rename,
+Detect Mimikatz With PowerShell Script Block Logging,"SEARCH PowerShell Script Block Logging telemetry (script block execution events)
+| FILTER events where the event identifier equals 4104
+| FILTER events where the script block text contains (case-insensitive substring match) any of: ""mimikatz"", ""-dumpcr"", ""sekurlsa::pth"", ""kerberos::ptt"", ""kerberos::golden""
+| FILL missing values with empty strings for fields: dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| GROUP events BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE count = number of events per group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group
+| DERIVE firstTime_readable = human-readable representation of firstTime, lastTime_readable = human-readable representation of lastTime
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, count, firstTime, lastTime, firstTime_readable, lastTime_readable
+| APPLY environment-specific suppression filters to exclude known benign or test activity (if defined)"
+Execution of File with Multiple Extensions,
+Windows Modify Registry With MD5 Reg Key Name,
+Rundll32 Control RunDLL Hunt,"SEARCH endpoint process execution events from sources such as Sysmon ProcessCreate, Windows Security 4688, and EDR process logs within the desired time range
+| FILTER events where the action indicates a process start/creation
+| FILTER events where the process corresponds to rundll32 (case-insensitive), such as:
+  - process_name equals ""rundll32.exe"" OR
+  - original_file_name equals ""RUNDLL32.EXE"" OR
+  - process_path ends with ""\rundll32.exe""
+| FILTER events where process_command_line contains the substring ""Control_RunDLL"" (case-insensitive)
+| GROUP BY the following attributes to form distinct executions:
+  - action
+  - host
+  - vendor_product
+  - user
+  - user_id
+  - process_name
+  - process_path
+  - process_executable
+  - process_id
+  - process_guid
+  - process_hash
+  - process_integrity_level
+  - process_command_line
+  - original_file_name
+  - parent_process_name
+  - parent_process_path
+  - parent_process_executable
+  - parent_process_id
+  - parent_process_guid
+  - parent_process_command_line
+| COMPUTE for each group:
+  - event_count = number of events
+  - first_seen_time = minimum event_time
+  - last_seen_time = maximum event_time
+|"
+Windows Masquerading Explorer As Child Process,"SEARCH process creation events from endpoint and operating system telemetry (e.g., Sysmon EID 1, Windows Security 4688, EDR process events), ensuring fields include event_time, host, user, process_name, process_path, process_id, process_guid, process_hash, original_file_name, process_integrity_level, command_line, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_command_line
+| FILTER events where parent_process_name is one of {""cmd.exe"",""powershell.exe"",""regsvr32.exe""}
+| FILTER events where process_name equals ""explorer.exe""
+| FILTER events where process_path contains ""\explorer.exe"" (to ensure the executed image is the Windows Explorer binary)
+| APPLY environment-specific allowlist to remove known benign parent-child combinations or automation paths if available
+| AGGREGATE count of events as event_count, minimum(event_time) as first_seen, maximum(event_time) as last_seen by host, user, process_name, process_path, process_id, process_guid, process_hash, original_file_name, process_integrity_level, command_line, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_command_line
+| DERIVE human_readable_first_seen from first_seen and human_readable_last_seen from last_seen
+| OUTPUT event_count, first_seen, human_readable_first_seen, last_seen, human_readable_last_seen, host, user, process_name, process_path, process_id, process_guid, process_hash, original_file_name, process_integrity_level, command_line, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_command_line"
+Windows System Time Discovery W32tm Delay,"SEARCH process-creation telemetry from: Sysmon Event ID 1, Windows Security Event ID 4688, and EDR process events (e.g., CrowdStrike ProcessRollup2) within the desired time range
+| PARSE each event to extract: timestamp, host, user, user_id, process_name, command_line, process_id, process_guid, process_path, original_file_name, process_hash, process_integrity_level, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_executable, vendor_product, action/result
+| FILTER events where process_name equals ""w32tm.exe"" (case-insensitive)
+| FILTER events where command_line contains ""/stripchart"" (case-insensitive)
+| FILTER events where command_line contains ""/computer:localhost"" (case-insensitive)
+| FILTER events where command_line contains ""/dataonly"" (case-insensitive)
+| FILTER events where command_line contains a token starting with ""/period:"" followed by a value (e.g., matches ""/period:\S+"")
+| FILTER events where command_line contains a token starting with ""/samples:"" followed by a value (e.g., matches ""/samples:\S+"")
+| GROUP events by: action/result, host, original_file_name, parent_process_name, parent_process_path, parent_process_executable, parent_process_id, parent_process_guid, process_name, process_path, process_id, process_guid, process_hash, process_integrity_level, user, user_id, vendor_product
+| AGGREGATE"
+Windows Cmdline Tool Execution From Non-Shell Process,
+Windows AD GPO Disabled,
+Windows Disable Change Password Through Registry,"SEARCH endpoint telemetry for registry value modification events
+| PARSE fields: timestamp, host, action, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| FILTER registry_path contains ""\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableChangePassword""
+| FILTER registry_value_data equals ""0x00000001""
+| FILTER registry_value_data is not null
+| GROUP records BY action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product
+| AGGREGATE count = number of records, firstTime = earliest timestamp, lastTime = latest timestamp per group
+| DERIVE firstTime_readable and lastTime_readable from firstTime and lastTime
+| APPLY FILTER to exclude known benign or allowlisted processes, users, or hosts based on environment-specific criteria
+| OUTPUT action, host, process_guid, process_id, registry_hive, registry_path, registry_key_name, registry_value_name, registry_value_type, registry_value_data, status, user, vendor_product, count, firstTime_readable, lastTime_readable"
+Windows Powershell History File Deletion,"SEARCH PowerShell Script Block Logging events with event_code == 4104 |
+FILTER events where ScriptBlockText contains ""Remove-Item"" AND ScriptBlockText contains "".HistorySavePath"" |
+FILL missing values in fields [dest, signature, signature_id, user_id, vendor_product, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with a placeholder value |
+GROUP events BY dest, signature, signature_id, user_id, vendor_product, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText |
+COMPUTE event_count = number of events in group, firstTime = earliest event timestamp in group, lastTime = latest event timestamp in group |
+DERIVE firstTime_readable and lastTime_readable as human-readable representations of firstTime and lastTime |
+APPLY environment-specific allowlist/suppression rules to remove known benign patterns (if defined) |
+OUTPUT dest, signature, signature_id, user_id, vendor_product, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, event_count, first"
+Spike in File Writes,
+Windows WPDBusEnum Registry Key Modification,
+Windows Impair Defenses Disable HVCI,
+Windows PowerShell IIS Components WebGlobalModule Usage,"SEARCH PowerShell Script Block Logging telemetry
+| FILTER events where EventCode or EventID equals 4104
+| FILTER events where ScriptBlockText contains any of [""New-WebGlobalModule"", ""Enable-WebGlobalModule"", ""Set-WebGlobalModule""]
+| PARSE fields: timestamp, dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| FILL_MISSING dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText with empty string
+| GROUP BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE count = number of events, firstTime = earliest timestamp, lastTime = latest timestamp
+| DERIVE firstTime_readable = convert firstTime to human-readable time, lastTime_readable = convert lastTime to human-readable time
+| APPLY environment-specific suppression or allowlist filters if available
+| OUTPUT dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, count, firstTime, lastTime, firstTime_readable, lastTime_readable"
+Detect Prohibited Applications Spawning cmd exe,"SEARCH endpoint process creation events from EDR and OS logs within the desired time window
+
+| PARSE each event to extract:
+  - timestamp
+  - device hostname
+  - user and user identifier
+  - action/type (ensure it denotes process start)
+  - child process: name, path, command_line, id, guid, hash, integrity level, original file name, executable path
+  - parent process: name, path, command_line (if available), id, guid, executable path
+  - vendor/product identifier
+
+| FILTER events to those representing a process start
+
+| FILTER events where the child process is the Windows command interpreter by matching any of:
+  - child process name equals ""cmd.exe""
+  - child original file name equals ""Cmd.Exe""
+  - child process path ends with ""\cmd.exe""
+  - child command_line begins with or contains ""cmd.exe""
+
+| FILTER events where the parent process name is in a maintained ProhibitedApplicationsList (applications that should not typically spawn the command interpreter)
+
+| GROUP events by:
+  - device hostname
+  - user and user identifier
+  - parent process name, path, id, guid
+  - child process name, path, id, guid
+  - child command_line
+  - child hash
+  - child integrity level
+  - vendor/product
+  - action/type
+
+| COMPUTE for each group:
+  - total"
+Schtasks Run Task On Demand,
+Windows PowerShell WMI Win32 ScheduledJob,"SEARCH PowerShell Script Block Logging events
+| FILTER records where EventCode equals 4104
+| FILTER records where ScriptBlockText contains the string ""win32_scheduledjob"" (case-insensitive substring match)
+| FILL missing values in fields [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText] with a placeholder (e.g., ""unknown"") to stabilize grouping
+| GROUP records BY dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText
+| COMPUTE count of records per group, earliest event time as firstTime, latest event time as lastTime
+| DERIVE firstTime_readable by converting firstTime to human-readable format
+| DERIVE lastTime_readable by converting lastTime to human-readable format
+| APPLY optional allowlist/false-positive suppression rules specific to benign Win32_ScheduledJob usage patterns if available
+| OUTPUT fields [dest, signature, signature_id, user_id, vendor_product, EventID, Guid, Opcode, Name, Path, ProcessID, ScriptBlockId, ScriptBlockText, count, firstTime, lastTime, firstTime_readable, lastTime_readable]"
+Windows Firewall Rule Modification,"SEARCH Windows Security Audit logs for firewall rule modification events | FILTER events where event_code equals 4947 | PARSE fields needed for analysis: timestamp, RuleName, signature, subject, status, dest, ProcessID | GROUP records by RuleName, signature, subject, status, dest, ProcessID | COMPUTE event_count per group, firstTime as minimum timestamp per group, lastTime as maximum timestamp per group | FORMAT firstTime and lastTime as human-readable datetimes | APPLY optional suppression rules to exclude known benign modifications as defined by organizational policy | OUTPUT RuleName, signature, subject, status, dest, ProcessID, event_count, firstTime, lastTime"
+User Discovery With Env Vars PowerShell,"SEARCH endpoint process execution events from host telemetry sources | PARSE fields: timestamp, host, action, process_name, process_path, command_line, process_id, process_guid, process_hash, process_integrity_level, original_file_name, user, user_id, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_command_line, product | FILTER action equals process_start (if this field exists) | FILTER process_name equals ""powershell.exe"" | FILTER command_line contains ""$env:UserName"" OR command_line contains ""[System.Environment]::UserName"" | GROUP BY host, action, original_file_name, parent_process_name, parent_process_path, parent_process_id, parent_process_guid, parent_process_command_line, command_line, process_name, process_path, process_id, process_guid, process_hash, process_integrity_level, user, user_id, product | AGGREGATE count as event_count, min(timestamp) as first_seen, max(timestamp) as last_seen | FORMAT first_seen, last_seen as human-readable timestamps | APPLY allowlist to exclude known benign combinations (for example, specific hosts, users, parent processes, or command-line patterns) | OUTPUT event_count, first_seen, last_seen, and all grouped context fields"
+Windows File Download Via CertUtil,
+Windows Credential Access From Browser Password Store,
